@@ -1,0 +1,19 @@
+{
+    "name": "TestDefnederCustom",
+    "description": "## FILL MANDATORY FIELD ##",
+    "support": "developer",
+    "currentVersion": "1.0.0",
+    "author": "ssharma7@paloaltonetworks.com",
+    "url": "",
+    "email": "",
+    "categories": [
+        "Cloud Services"
+    ],
+    "tags": [],
+    "useCases": [],
+    "keywords": [],
+    "marketplaces": [
+        "marketplacev2"
+    ],
+    "githubUser": []
+}

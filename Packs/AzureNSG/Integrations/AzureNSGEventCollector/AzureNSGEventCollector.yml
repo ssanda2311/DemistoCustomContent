@@ -1,0 +1,69 @@
+commonfields:
+  id: AzureNSGEventCollector
+  version: -1
+vcShouldKeepItemLegacyProdMachine: false
+name: AzureNSGEventCollector
+display: AzureNSGEventCollector
+category: Utilities
+description: This Integration will Pull the logs from the Azure NSG Blob storage
+detaileddescription: "## \U0001F510 Authentication Methods for NSG Integration\n\nTo
+  enable secure communication between Cortex XSIAM and your NSG (Network Security
+  Group) data source, authentication is required using a **connection string** and
+  **container name**. These credentials allow Cortex to access and ingest logs or
+  configuration data from your storage backend.\n\n### \U0001F4E6 Required Parameters\n\n-
+  **Connection String**  \n  This string contains the credentials and endpoint information
+  needed to access your storage account. It typically includes the account name, key,
+  and endpoint suffix.\n\n- **Container Name**  \n  The name of the blob container
+  where NSG logs or configuration files are stored. Ensure the container is publicly
+  accessible or that the connection string has sufficient permissions.\n\n---\n\n##
+  \U0001F527 Setup Instructions\n\n1. **Obtain Connection String**  \n   - Navigate
+  to your Azure Storage Account.\n   - Go to **Access Keys** under **Security + Networking**.\n
+  \  - Copy the **Connection String** for either key1 or key2.\n\n2. **Identify Container
+  Name**  \n   - Go to **Containers** under **Data Storage**.\n   - Select the container
+  where NSG logs are stored.\n   - Copy the container name exactly as it appears.\n\n3.
+  **Configure in Cortex XSIAM**  \n   - Open the NSG integration instance.\n   - Paste
+  the connection string into the **Connection String** field.\n   - Enter the container
+  name in the **Container Name** field.\n   - Save and test the connection.\n\n---\n\n##
+  \U0001F6E1️ Permissions & Access Control\n\nEnsure the connection string has **read
+  access** to the container. If using a **Shared Access Signature (SAS)** token instead
+  of a full connection string, make sure it includes:\n- `Blob` service access\n-
+  `Read` permission\n- Valid expiry date\n\n---\n\n\n## \U0001F9EA Testing the Integration\n\nAfter
+  configuration:\n- Use the **Test ** button to verify access.\n- Confirm that logs
+  are ingested successfully.\n- Check the Cortex XSIAM dataset for NSG-related logs.\n\n"
+configuration:
+- display: Container Name
+  name: container_name
+  type: 0
+  required: false
+  additionalinfo: Enter the Name of the container
+- display: Connection String
+  name: connection_string
+  type: 12
+  required: false
+  additionalinfo: Enter the Connection String
+- section: Collect
+  display: Fetch Events
+  name: isFetchEvents
+  type: 8
+  required: false
+- section: Collect
+  advanced: true
+  display: Events Fetch Interval
+  name: eventFetchInterval
+  defaultvalue: "1"
+  type: 19
+  required: false
+- display: ""
+  name: vendor
+  type: 0
+  required: false
+- display: ""
+  name: product
+  type: 0
+  required: false
+script:
+  type: python
+  dockerimage: demisto/ansible-runner:1.0.0.4224996
+  subtype: python3
+  isfetchevents: true
+  runonce: false

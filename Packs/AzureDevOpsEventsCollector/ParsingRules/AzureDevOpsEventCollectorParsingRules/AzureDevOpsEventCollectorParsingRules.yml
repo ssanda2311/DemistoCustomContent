@@ -1,0 +1,6 @@
+id: AzureDevOpsEventCollector_ParsingRule
+name: AzureDevOpsEventCollector Parsing Rule
+fromversion: 8.3.0
+tags: []
+rules: ''
+samples: ''

@@ -1,0 +1,283 @@
+commonfields:
+  id: Microsoft Defender Events Collector
+  version: -1
+vcShouldKeepItemLegacyProdMachine: false
+name: Microsoft Defender Events Collector
+display: Microsoft Defender Events Collector
+category: Analytics & SIEM
+image: data:image/png;base64,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
+description: Unified gateway to security insights - all from a unified Microsoft Graph
+  Security API.
+detaileddescription: |-
+  # Authentication
+  You can authenticate either by Azure Active Directory applications or by Azure Managed Identities.
+
+  ### Authentication Based on Azure Active Directory Applications
+
+  Microsoft integrations (Graph and Azure) in Cortex XSIAM use Azure Active Directory applications to authenticate with Microsoft APIs. These integrations use OAuth 2.0 and OpenID Connect standard compliant authentication services, which use an application to sign in or delegate authentication. For more information, see the Microsoft identity platform overview.
+
+  There are two application authentication methods available:
+
+   * [Cortex XSIAM Application](https://xsoar.pan.dev/docs/reference/articles/microsoft-integrations---authentication#cortex-xsoar-application)
+   * [Self-Deployed Application](https://xsoar.pan.dev/docs/reference/articles/microsoft-integrations---authentication#self-deployed-application)
+
+  Depending on the authentication method that you use, the integration parameters might change.
+
+  To use the **Cortex XSIAM application** and allow Cortex XSIAM access to Microsoft Graph Security an administrator has to approve our app using an admin consent flow by clicking this **[link](https://oproxy.demisto.ninja/ms-graph-security)**.
+  After authorizing the Cortex XSIAM app, you will get an ID, Token, and Key which should be inserted in the integration instance settings fields.
+  If you previously had an API V1 configured based on the credentials obtained from this method, refer to the link above to gain new credentials with the relevant permissions.
+
+  ### Important
+  1. The ***eDiscovery*** and ***Threat Assessment*** commands are only supported when using the `Authorization Code flow` with `Delegated (work or school account)` permission type.
+  2. When using `Authorization Code flow`, the connection should be tested using the ***!msg-auth-test*** command.
+
+  ### Authentication Based on Azure Managed Identities
+  ##### Note: This option is relevant only if the integration is running on Azure VM.
+  Follow one of these steps for authentication based on Azure Managed Identities:
+
+  - ##### To use System Assigned Managed Identity
+     - Select the **Use Azure Managed Identities** checkbox and leave the **Azure Managed Identities Client ID** field empty.
+
+  - ##### To use User Assigned Managed Identity
+     1. Go to [Azure Portal](https://portal.azure.com/) -> **Managed Identities**.
+     2. Select your User Assigned Managed Identity -> copy the Client ID -> paste it in the **Azure Managed Identities Client ID** field in the instance settings.
+     3. Select the **Use Azure Managed Identities** checkbox.
+
+  For more information, see [Managed identities for Azure resources](https://learn.microsoft.com/en-us/azure/active-directory/managed-identities-azure-resources/overview).
+
+
+  ---
+  [View Integration Documentation](https://xsoar.pan.dev/docs/reference/integrations/microsoft-graph)
+configuration:
+- section: Connect
+  display: Host URL
+  name: host
+  defaultvalue: https://graph.microsoft.com
+  type: 0
+  required: true
+- section: Connect
+  display: MS graph security alert API Version
+  name: api_version
+  defaultvalue: Alerts v2
+  type: 15
+  required: false
+  options:
+  - Legacy Alerts
+  - Alerts v2
+- section: Connect
+  display: ""
+  displaypassword: Application ID or Client ID
+  name: creds_auth_id
+  type: 9
+  required: false
+  hiddenusername: true
+- section: Connect
+  display: ""
+  displaypassword: Token or Tenant ID
+  name: creds_tenant_id
+  type: 9
+  required: false
+  hiddenusername: true
+- section: Connect
+  display: ""
+  displaypassword: Key or Client Secret
+  name: creds_enc_key
+  type: 9
+  required: false
+  hiddenusername: true
+- section: Connect
+  display: Application ID or Client ID
+  name: auth_id
+  type: 4
+  required: false
+  hidden: true
+  additionalinfo: See the Help tab.
+- section: Connect
+  display: Token or Tenant ID
+  name: tenant_id
+  type: 4
+  required: false
+  hidden: true
+  additionalinfo: See the Help tab.
+- section: Connect
+  display: Key or Client Secret
+  name: enc_key
+  type: 4
+  required: false
+  hidden: true
+  additionalinfo: See the Help tab.
+- section: Connect
+  display: Certificate Thumbprint
+  displaypassword: Private Key
+  name: creds_certificate
+  type: 9
+  required: false
+- section: Connect
+  display: Certificate Thumbprint
+  name: certificate_thumbprint
+  type: 4
+  required: false
+  hidden: true
+  additionalinfo: Used for certificate authentication as it appears in the "Certificates
+    & secrets" page of the app.
+- section: Connect
+  display: Private Key
+  name: private_key
+  type: 14
+  required: false
+  hidden: true
+  additionalinfo: Used for certificate authentication. The private key of the registered
+    certificate.
+- section: Connect
+  display: Application redirect URI (for self-deployed mode)
+  name: redirect_uri
+  type: 0
+  required: false
+- section: Connect
+  display: Authorization code
+  displaypassword: Authorization code
+  name: auth_code
+  type: 9
+  required: false
+  hiddenusername: true
+  additionalinfo: Get the authorization code from steps 3-5 in the self deployed authorization
+    process.
+- section: Connect
+  display: Use Azure Managed Identities
+  name: use_managed_identities
+  type: 8
+  required: false
+  additionalinfo: Relevant only if the integration is running on Azure VM. If selected,
+    authenticates based on the value provided for the Azure Managed Identities Client
+    ID field. If no value is provided for the Azure Managed Identities Client ID field,
+    authenticates based on the System Assigned Managed Identity. For additional information,
+    see the Help tab.
+- section: Connect
+  display: ""
+  displaypassword: Azure Managed Identities Client ID
+  name: managed_identities_client_id
+  type: 9
+  required: false
+  hiddenusername: true
+  additionalinfo: The Managed Identities client ID for authentication - relevant only
+    if the integration is running on Azure VM.
+- section: Connect
+  advanced: true
+  display: Trust any certificate (not secure)
+  name: insecure
+  type: 8
+  required: false
+- section: Connect
+  advanced: true
+  display: Use system proxy settings
+  name: proxy
+  type: 8
+  required: false
+- section: Connect
+  display: Use a self-deployed Azure application
+  name: self_deployed
+  type: 8
+  required: false
+  additionalinfo: Select this checkbox if you are using a self-deployed Azure application.
+- section: Collect
+  display: Incidents Fetch Interval
+  name: incidentFetchInterval
+  defaultvalue: "1"
+  type: 19
+  required: false
+- section: Connect
+  display: Incident type
+  name: incidentType
+  type: 13
+  required: false
+- section: Collect
+  display: First fetch timestamp (<number> <time unit>, e.g., 12 hours, 7 days)
+  name: fetch_time
+  defaultvalue: 1 days
+  type: 0
+  required: false
+  additionalinfo: <number> <time unit>, for example 1 hour, 30 minutes
+- section: Collect
+  display: Max incidents per fetch
+  name: fetch_limit
+  defaultvalue: "1000"
+  type: 0
+  required: false
+- section: Collect
+  advanced: true
+  display: Fetch Query
+  name: query
+  type: 0
+  required: false
+  additionalinfo: Use this field to filter fetched incidents according to any of the
+    alert properties. Overrides the providers list, if given. Filter should be in
+    the format "{property} eq '{property-value}'". Multiple filters can be applied
+    separated with " and ", for example "createdDateTime eq YYYY-MM-DD and severity
+    eq 'high'".
+- display: Microsoft 365 Defender context
+  name: microsoft_365_defender_context
+  defaultvalue: "false"
+  type: 8
+  required: false
+  additionalinfo: Save Hunting Query result to the Microsoft 365 Defender context.
+    path
+- display: VENDOR
+  name: vendor
+  type: 0
+  required: false
+- display: PRODUCT
+  name: product
+  type: 0
+  required: false
+- section: Collect
+  display: Fetch Events
+  name: isFetchEvents
+  type: 8
+  required: false
+- section: Collect
+  advanced: true
+  display: Events Fetch Interval
+  name: eventFetchInterval
+  defaultvalue: "1"
+  type: 19
+  required: false
+script:
+  commands:
+  - name: msg-advanced-hunting
+    arguments:
+    - name: query
+      required: true
+      description: Advanced hunting query.
+    - name: limit
+      description: Number of entries. Enter -1 for unlimited query. In case a limit
+        also appears in the query, priority will be given to the query.
+      defaultValue: "50"
+    - name: timeout
+      description: The time limit in seconds for the http request to run.
+      defaultValue: "50"
+    outputs:
+    - contextPath: MsGraph.Hunt.query
+      description: The query used. Also acted as a key.
+      type: String
+    - contextPath: MsGraph.Hunt.results
+      description: The results of the query.
+      type: Unknown
+    - contextPath: Microsoft365Defender.Hunt.query
+      description: The query used. Also acted as a key.
+      type: String
+    - contextPath: Microsoft365Defender.Hunt.results
+      description: The results of the query.
+      type: Unknown
+    description: Advanced hunting is a threat-hunting tool that uses specially constructed
+      queries to examine the past 30 days of event data in Microsoft Graph Security.
+  script: ""
+  type: python
+  dockerimage: demisto/crypto:1.0.0.87358
+  subtype: python3
+  isfetchevents: true
+  runonce: false
+marketplaces:
+- marketplacev2
+- platform
+tests:
+- No test

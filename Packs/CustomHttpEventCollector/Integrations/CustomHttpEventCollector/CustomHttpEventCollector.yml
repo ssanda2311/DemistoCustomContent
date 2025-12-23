@@ -1,0 +1,85 @@
+commonfields:
+  id: Generic Webhook
+  version: -1
+vcShouldKeepItemLegacyProdMachine: false
+name: Generic Webhook
+display: Generic Webhook
+category: Data Enrichment & Threat Intelligence
+detaileddescription: ""
+sectionorder:
+- Connect
+- Collect
+configuration:
+- section: Connect
+  display: Long Running Instance
+  name: longRunning
+  defaultvalue: "true"
+  type: 8
+  required: false
+  hidden: true
+- section: Connect
+  display: Certificate (Required for HTTPS)
+  name: certificate
+  type: 12
+  required: false
+- section: Connect
+  display: Private Key (Required for HTTPS)
+  name: key
+  type: 14
+  required: false
+- section: Connect
+  display: Username
+  name: credentials
+  type: 9
+  required: false
+- section: Collect
+  display: Collection JSON
+  name: collections
+  defaultvalue: |-
+    {
+       "AWS": "type:CIDR and sourceBrands:\"AWS Feed\""
+    }
+  type: 12
+  required: true
+  additionalinfo: JSON string of indicator query collections - dictionary of the collection
+    name as the key and the query as the value.
+- section: Connect
+  display: TAXII Service URL Address
+  name: service_address
+  type: 0
+  required: false
+  additionalinfo: The URL address to set in the TAXII service response. If not set,
+    the integration will try to auto-detect the URL.
+- section: Connect
+  display: Listen Port
+  name: longRunningPort
+  type: 0
+  required: true
+  additionalinfo: Runs the service on this port from within Cortex. Requires a unique
+    port for each long-running integration instance. Do not use the same port for
+    multiple instances. (For Cortex and Cortex XSIAM) If you do not enter a Listen
+    Port, an unused port for the EDL will automatically be generated when the instance
+    is saved. However, if using an engine, you must enter a Listen Port.
+- display: Alert type
+  name: alertType
+  type: 13
+  required: false
+triggers:
+- conditions:
+  - name: engine
+    operator: not_exists
+  - name: isEngineGroup
+    operator: not_exists
+  effects:
+  - name: longRunningPort
+    action:
+      hidden: true
+      required: false
+script:
+  type: python
+  dockerimage: demisto/taxii-server:1.0.0.3985599
+  subtype: python3
+  runonce: false
+  longRunning: true
+  longRunningPort: true
+sourcemoduleid: Generic Webhook

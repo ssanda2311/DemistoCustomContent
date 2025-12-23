@@ -1,0 +1,17 @@
+{
+    "name": "Azure NSG",
+    "description": "Azure NSG data collector",
+    "support": "xsiam",
+    "currentVersion": "1.0.0",
+    "author": "ssharma7@paloaltonetworks.com",
+    "url": "https://www.paloaltonetworks.com/cortex",
+    "email": "",
+    "categories": [],
+    "tags": [],
+    "useCases": [],
+    "keywords": [],
+    "marketplaces": [
+        "xsoar",
+        "marketplacev2"
+    ]
+}

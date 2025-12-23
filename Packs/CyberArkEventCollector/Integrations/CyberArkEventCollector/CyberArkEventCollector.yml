@@ -1,0 +1,119 @@
+commonfields:
+  id: CyberArkEventCollector
+  version: -1
+vcShouldKeepItemLegacyProdMachine: false
+name: CyberArkEventCollector
+display: CyberArk SIEM Event Collector
+category: Analytics & SIEM
+description: This is the Cyber Ark event collector integration for Cortex XSIAM.
+detaileddescription: |-
+  ## CyberArk
+
+    This is the CyberArk SIEM event collector integration for XSIAM.
+
+    ## Configure CyberArk SIEM Event Collector on Cortex:
+    1. Navigate to **Settings** > **Configurations** > **Automation & Feed Integrations**.
+    2. Search for CyberArk SIEM Event Collector.
+    3. Click **Add instance** to create and configure a new integration instance.
+
+        | **Parameter** | **Required** |
+        | --- | --- |
+        | Server URL            | True |
+        | Client ID         | True |
+        | Client Secret     | True |
+        | Api Key           | True |
+        | Scope             | True |
+        | App ID            | True |
+
+    4. Click **Test** to validate the URLs, token, and connection
+
+  ---
+  [View Integration Documentation](https://xsoar.pan.dev/docs/reference/integrations/proofpoint-ctr-event-collector)
+configuration:
+- section: Connect
+  display: Server URL
+  name: cyberark_url
+  defaultvalue: https://api.example.com
+  type: 0
+  required: false
+- section: Connect
+  display: Client ID
+  displaypassword: Client Secret
+  name: credentials
+  type: 9
+  required: true
+- section: Connect
+  display: ""
+  displaypassword: API Key
+  name: api_key
+  type: 9
+  required: false
+  hiddenusername: true
+- section: Connect
+  display: Scope
+  name: scope
+  defaultvalue: isp.audit.events:read
+  type: 0
+  required: true
+- section: Connect
+  display: App ID
+  name: app_id
+  type: 0
+  required: true
+  additionalinfo: CyberArk app id
+- section: Collect
+  display: Service Name
+  name: service_name
+  defaultvalue: Privilege Cloud
+  type: 15
+  required: false
+  options:
+  - Conjur Cloud
+  - Identity
+  - Privilege Cloud
+  - Secure Infrastructure Access
+  - Secrets Hub
+  - Secure Cloud Access
+  additionalinfo: Service name for which events to be fetched.
+- section: Connect
+  display: Verify SSL Certificates
+  name: secure
+  type: 8
+  required: false
+- section: Connect
+  display: Use system proxy settings
+  name: proxy
+  type: 8
+  required: false
+- section: Collect
+  display: Fetch Events
+  name: isFetchEvents
+  type: 8
+  required: false
+- section: Collect
+  display: Events First Fetch Timestamp
+  name: eventFirstFetch
+  defaultvalue: 1 days
+  type: 0
+  required: false
+  additionalinfo: <number> <time unit>, e.g., 12 hours, 7 days
+- section: Collect
+  display: Events Fetch Limit
+  name: eventFetchLimit
+  defaultvalue: "200"
+  type: 0
+  required: false
+- section: Collect
+  advanced: true
+  display: Events Fetch Interval
+  name: eventFetchInterval
+  defaultvalue: "1"
+  type: 19
+  required: false
+script:
+  type: python
+  dockerimage: demisto/python3:3.12.8.3296088
+  subtype: python3
+  isfetchevents: true
+  runonce: false
+sourcemoduleid: CyberArkEventCollector
