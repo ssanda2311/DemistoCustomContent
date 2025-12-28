@@ -183,14 +183,14 @@ def get_application_code(service_name: str):
     return application_code
 
 
-def reduce_1ms(timestamp):
+def reduce_ms(timestamp, factor):
     """
-    Reduce 1 milisecond from the timestamp
+    Reduce x milisecond from the timestamp
     """
     dt = convert_timestamp_str_to_dt(timestamp)
 
     # Subtract 1 millisecond
-    new_dt = dt - timedelta(milliseconds=1)
+    new_dt = dt - timedelta(milliseconds=factor)
     return convert_timestamp_dt_to_str(new_dt)
 
 
@@ -245,7 +245,32 @@ def sort_events(events, order="asc"):
         return sorted(events, key=lambda x: x["timestamp"])
     else:
         return sorted(events, key=lambda x: x["timestamp"], reverse=True)
-    
+
+
+def create_query_payload(fetch_limit, from_ts, to_ts, application_code):
+    """
+    """
+    payload = {
+        "query": {
+            "pageSize": fetch_limit,
+            "selectedFields": ["arrivalTimestamp"],
+            "filterModel": {
+                "date": {
+                    "dateFrom": from_ts,
+                    "dateTo": to_ts
+                },
+                "applicationCode": [{
+                    "op": "include",
+                    "params": [
+                        application_code
+                    ],
+                    "filter_type": 7
+                }],
+            }
+        }
+    }
+    return payload
+
 
 def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: dict, application_code) -> tuple[list[dict], Union[str, None]]:
     """
@@ -255,14 +280,6 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
     last_fetch = last_run.get('timestamp')
     last_event_ids = last_run.get('uuid', [])
     last_cursor_ref = last_run.get('cursor_ref')
-
-    '''
-    set default value for dedup flag
-    whether to dedup the results or not.
-    Events will be checked for deduplication only when a new cursor is fetched
-    by sending the payload.
-    Else the continuation cursor will be used to fetch the events
-    '''
     perform_dedup = True
 
     if not last_fetch:
@@ -279,62 +296,81 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
     if not last_cursor_ref:
         if not last_fetch:
             last_fetch = first_fetch
+            is_initial_fetch = True
         else:
-            last_fetch = reduce_1ms(last_fetch)
+            last_fetch = reduce_ms(last_fetch, factor=1)
+            is_initial_fetch = False
 
         # create payload for the create query api request
         to_date = current_utc()
-        payload = {
-            "query": {
-                "pageSize": fetch_limit,
-                "selectedFields": ["arrivalTimestamp"],
-                "filterModel": {
-                    "date": {
-                        "dateFrom": last_fetch,
-                        "dateTo": to_date
-                    },
-                    "applicationCode": [{
-                        "op": "include",
-                        "params": [
-                            application_code
-                        ],
-                        "filter_type": 7
-                    }],
-                }
-            }
-        }
 
-        # fetch the cursor for getting cyber ark events
-        cursor_ref = client.cyberark_stream_create_query(payload)
+        duplicate_events_found = False  # flag to check if duplicate events are found
+        max_lookback = 5  # max number of lookback iterations
+        lookback_count = 0  # run loop for max_lookback iterations to fetch the overlapping events
+        events_data = []
 
-        # fetch the events from cyber ark
-        events = client.cyberark_stream_query_results(cursor_ref)
+        '''
+        If it not the initial fetch then loop and check for overlapping events
+        else send only single api call to fetch the events.
+        '''
+        if not is_initial_fetch:
+            while lookback_count < max_lookback:
+                payload = create_query_payload(fetch_limit, last_fetch, to_date, application_code)
+                cursor_ref = client.cyberark_stream_create_query(payload)
+                events = client.cyberark_stream_query_results(cursor_ref)
+                events_data = events.get("data", [])
+                events_data = sort_events(events_data)
+
+                # check if overlapping events found
+                if events_data:
+                    if overlap_exists(events_data, last_event_ids):
+                        # Found overlapping events
+                        duplicate_events_found = True
+                        break
+                    
+                    '''
+                    If no overlapping events are found then further reduce the timestamp by 1000 miliseconds 
+                    and fetch the events.
+                    '''
+                    last_fetch = reduce_ms(last_fetch, factor=1000)
+                    lookback_count += 1
+                else:
+                    break
+            
+            '''
+            If the while loop all iterations execution finished but still 
+            no overlapping events are found.
+            Then, raise error and it is possibly a api data loss only, not an error from 
+            integration code.
+            '''
+            if lookback_count == max_lookback and not events_data:
+                demisto.updateModuleHealth(
+                    f"No overlapping events found for timeframe: {last_fetch} to {to_date}, application code: {application_code}. Possible API data loss."
+                )
+                demisto.debug(
+                    f"No overlapping events found for timeframe: {last_fetch} to {to_date}, application code: {application_code}. Possible API data loss."
+                )
+        else:
+            payload = create_query_payload(fetch_limit, last_fetch, to_date, application_code)
+            cursor_ref = client.cyberark_stream_create_query(payload)
+            events = client.cyberark_stream_query_results(cursor_ref)
+            events_data = events.get("data", [])
+            events_data = sort_events(events_data)
+            perform_dedup = False
+
     else:
+        # Continuation using existing cursor
         events = client.cyberark_stream_query_results(last_cursor_ref)
+        events_data = events.get("data", [])
+        events_data = sort_events(events_data)
         perform_dedup = False
 
-    '''
-    Check if events has any data,
-    If empty then set cursor ref in context to null
-    '''
-    events_data = events.get("data", [])
-
-    # sort events based on timestamp in asc order
-    events_data = sort_events(events_data)
-    
-    if events_data:
-        next_cursor = events.get("paging", {}).get("cursor", {}).get("cursorRef")
-    else:
-        next_cursor = None
-
-    if perform_dedup:
-        if events_data and last_event_ids and not overlap_exists(events_data, last_event_ids):
-            demisto.updateModuleHealth(f"No overlapping events found for the events fetch in timeframe between: {last_fetch} to {to_date} for application code: {application_code}. Possible API data loss.")
-            demisto.debug(f"No overlapping events found for the events fetch in timeframe between: {last_fetch} to {to_date} for application code: {application_code}. Possible API data loss.")
-
+    if perform_dedup and events_data:
         events_data = deduplicate_events(events_data, last_event_ids, last_run.get('timestamp', last_fetch))
 
-            
+
+    # Set next cursor
+    next_cursor = events.get("paging", {}).get("cursor", {}).get("cursorRef") if events_data else None
 
     return events_data, next_cursor
 
