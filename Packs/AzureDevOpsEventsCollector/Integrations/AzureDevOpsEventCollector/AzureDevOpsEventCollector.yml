@@ -83,6 +83,13 @@ configuration:
   type: 8
   required: false
 - section: Collect
+  display: Max Loop Iterations
+  name: maxLoopIterations
+  defaultvalue: "10"
+  type: 0
+  required: false
+  additionalinfo: Number of iterations of logs fetch for each xsiam event fetch operation
+- section: Collect
   display: Fetch Events
   name: isFetchEvents
   type: 8

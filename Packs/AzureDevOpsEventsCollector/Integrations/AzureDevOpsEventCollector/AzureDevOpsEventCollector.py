@@ -130,6 +130,13 @@ class Client(BaseClient):
             return f"Access token is not present in the response: {response}. Please check the credentials."
 
 
+def convert_timestamp_dt_to_str(timestamp_dt):
+    """
+    Convert datetime timestmap to string
+    """
+    return timestamp_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def reduce_1ms(timestamp):
     """
     Reduce 1 ms from the timestamp.
@@ -169,18 +176,12 @@ def reduce_1ms(timestamp):
     return f"{base}.{frac7}Z"
 
 
-def get_last_run(logs: list[dict]) -> dict:
+def current_utc() -> str:
     """
-    Get the info from the last run, it returns the time to query from and the last fetched incident ids
+    Returns current UTC timestmap string in format as %Y-%m-%dT%H:%M:%S.%f
     """
-    latest_ts = logs[0]["timestamp"]
-    ids = [log["id"] for log in logs if log["timestamp"] == latest_ts]
-
-    next_run = {
-        'timestamp': latest_ts,
-        'ids': ids
-    }
-    return next_run
+    now = datetime.now(timezone.utc)
+    return convert_timestamp_dt_to_str(now)
 
 
 def normalize_ts(ts: str) -> datetime:
@@ -225,104 +226,135 @@ def deduplicate_logs(logs: list[dict], ids: list[str], fetch_time: str) -> list[
     return filtered_audit_logs
 
 
-def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: dict) -> list[dict]:
+def get_logs(client: Client, params: dict[str, str]):
+    """
+    Get the logs from azure based on the api query parameters
+    """
+    response = client.azure_devops_get_logs(params)
+
+    # parse audit logs from the api response
+    audit_logs = response.get("decoratedAuditLogEntries", [])
+    # check for flag in api response to indentify whether more continuing events are present or not
+    has_more_logs = response.get("hasMore", False)
+    # get continuation token if HasMore flag is True in api response
+    continuation_token = response.get("continuationToken") if has_more_logs else None
+    
+    return audit_logs, has_more_logs, continuation_token
+    
+
+def fetch_events(client: Client, api_fetch_limit: int, first_fetch: str, last_run: dict, max_loop_iterations: int, vendor: str, product: str):
     """
     Format the payload and the fetch the API response.
     Perform deduplication of fetched response by comparing with the previous fetch (only if continuation token was not present in last fetch)
     """
-    last_fetch = last_run.get('last_fetch_initial_timestamp')
-    continuation_token = last_run.get("continuation_token")
+    last_fetch = last_run.get('last_fetch')
     last_fetch_ids = last_run.get('last_fetch_ids', [])
-    next_run = {}
-
-    '''
-    set flag to denote whether it is the batch's initial fetch
-    or the continuation fetch
-    '''
-    batch_initial_fetch = True
+    last_params = last_run.get("params", {})
 
     if not last_fetch:
         first_fetch_dt = dateparser.parse(first_fetch, settings={'RELATIVE_BASE': datetime.now(timezone.utc)})
 
         if first_fetch_dt.tzinfo is None:
             first_fetch_dt = first_fetch_dt.replace(tzinfo=timezone.utc)
-        last_fetch = first_fetch_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-    # Intitial query params
-    params = {
-        "batchSize": fetch_limit,
-        "skipAggregation": True
-    }
-
-    '''
-    If continuation token was present in last fetch,
-    then use the continuation token to fetch next page
-    else use the timestamp of latest event to fetch the audit logs
-    '''
-    if continuation_token:
-        # update flag to False, when fetching continuation events
-        batch_initial_fetch = False
-        params.update({
-            "continuationToken": continuation_token,
-            "startTime": last_run["fetch_start_timestamp"]
-        })
+        start_time = convert_timestamp_dt_to_str(first_fetch_dt)
+        first_fetch = True
     else:
-        # reduce 1 milisecond from last fetch to avoid missing logs, if it is not the first fetch
-        start_time = reduce_1ms(last_fetch) if "last_fetch_initial_timestamp" in last_run else last_fetch
-        params.update({
-            "startTime": start_time
-        })
-
-
-    response = client.azure_devops_get_logs(params)
-
-    # parse audit logs from the api response
-    audit_logs = response.get("decoratedAuditLogEntries", [])
-
-    # check forflag in api response to indentify whether more continuing events are present or not
-    has_more_logs = response.get("hasMore", False)
-
-    # set new continuation token if HasMore flag is True in api response
-    new_continuation_token = response.get("continuationToken") if has_more_logs else None
+        start_time = reduce_1ms(last_fetch)
+        first_fetch = False
 
     '''
-    Get the first event timestamp if it is the initial fetch of a batch.
-    For continuation fetch the timestamp will be received in decreasing order
-    So, saving the latest timestamp in context for the next initial batch's fetch
+    Check if last fetch execution was incomplete.
+    If last_params is not empty then, use the same api parameters
+    else format new parameters
     '''
-    if batch_initial_fetch and audit_logs:
-        next_fetch = audit_logs[0]["timestamp"]
+    if not last_params:
+        # get current time for setting the endTime of the azure events fetch
+        end_time = current_utc()
 
-        # collect the event ids for the same next_fetch timestamp
-        event_ids = [log['id'] for log in audit_logs if log["timestamp"] == next_fetch]
-
-        # Set the next_run data for updating the integration context
-        next_run = {
-            'last_fetch_initial_timestamp': next_fetch,
-            'continuation_token': new_continuation_token,
-            'last_fetch_ids': event_ids,
-            'fetch_start_timestamp': start_time
+        # Intitial query params
+        params = {
+            "batchSize": api_fetch_limit,
+            "skipAggregation": True,
+            "startTime": start_time,
+            "endTime": end_time
         }
 
-    # if next_run is empty then set last_run as next_run
-    if not next_run:
-        next_run = last_run
-        next_run["continuation_token"] = new_continuation_token
+        # flag to denote if dedup check to be executed or not
+        dedup_check = True if last_fetch else False
+        # flag to denote if continued events are fetched
+        fetch_continued_events = False
 
-    '''
-    If new logs are present and also event ids are present in integration context from the last initial batch fetch
-    then check for overlapping events and deduplcate the logs.
-    '''
-    if audit_logs and last_fetch_ids and not has_more_logs:
-        # check the overlapping events
-        if not overlap_exists(audit_logs, last_fetch_ids):
-            demisto.updateModuleHealth(f"No overlapping logs found for the fetch in timeframe between {last_run.get('fetch_start_timestamp')} to {last_run.get('last_fetch_initial_timestamp')}. Possible API data loss.")
-            demisto.debug(f"No overlapping logs found for the fetch in timeframe between {last_run.get('fetch_start_timestamp')} to {last_run.get('last_fetch_initial_timestamp')}. Possible API data loss.")
+    else:
+        params = {**last_params}
+        # flag to denote if dedup check to be executed or not
+        dedup_check = False
+         # flag to denote if continued events are fetched
+        fetch_continued_events = True
 
-        # Audit events deduplication
-        audit_logs = deduplicate_logs(audit_logs, last_fetch_ids, last_fetch)
+    # number of iterations of while loop
+    loop_iterations = 0
 
-    return audit_logs, next_run
+    integration_context = {**last_run}
+
+    while True:
+        exit_loop = False
+        
+        fetch_params = {**params}
+        audit_logs, has_more_logs, continuation_token = get_logs(client, params)
+
+        if audit_logs:
+            if loop_iterations == 0 and not fetch_continued_events:
+                # get the latest timestamp from audit logs and related log ids
+                latest_log_timestamp = audit_logs[0]["timestamp"]
+                log_ids = [log['id'] for log in audit_logs if log["timestamp"] == latest_log_timestamp]
+
+                # update integration context dict with the latest log timestmap and log ids
+                integration_context = {
+                    "last_fetch": latest_log_timestamp,
+                    "last_fetch_ids": log_ids
+                }
+            
+            '''
+            Update api parameters with the updated data as per latest fetch
+            If more logs are present, then update continuation token in the api parameters
+            else set api parameters to none and exit the loop
+            '''
+            if has_more_logs:
+                params["continuationToken"] = continuation_token
+            else:
+                params = None
+                exit_loop = True
+
+                '''
+                If no more logs are present then perform dedup check and log error 
+                if no duplicate events are found
+                '''
+                if last_fetch_ids and dedup_check:
+                    # check the overlapping events
+                    if not overlap_exists(audit_logs, last_fetch_ids):
+                        demisto.updateModuleHealth(f"No overlapping logs found for the fetch for the api parameters: {fetch_params}. Possible API data loss.")
+                        demisto.debug(f"No overlapping logs found for the fetch for the api parameters: {fetch_params}. Possible API data loss.")
+
+                    # Audit events deduplication
+                    audit_logs = deduplicate_logs(audit_logs, last_fetch_ids, last_fetch)
+
+            integration_context["params"] = params
+
+            send_events_to_xsiam(audit_logs, vendor=vendor, product=product, should_update_health_module=True)
+
+            
+        else:
+            integration_context["params"] = None
+            exit_loop = True
+
+
+        # Update integration context last run data
+        demisto.setLastRun(integration_context)
+
+        loop_iterations += 1
+
+        if loop_iterations >= max_loop_iterations or exit_loop:
+            break
 
 
 def test_module(client: Client):
@@ -354,6 +386,7 @@ def main() -> None:
     scope = params.get('scope')
     client_id = params.get('credentials', {}).get('identifier')
     client_secret = params.get('credentials', {}).get('password')
+    max_iterations = arg_to_number(params.get('maxLoopIterations', "10"))
 
     use_ssl = params.get('secure', False)
     proxy = params.get('proxy', False)
@@ -377,8 +410,8 @@ def main() -> None:
 
     command = demisto.command()
     try:
-        fetch_limit = params.get("eventFetchLimit", 200)
-        first_fetch = params.get("eventFirstFetch", "1 days")
+        fetch_limit = params.get("eventFetchLimit", 500)
+        first_fetch = params.get("eventFirstFetch", "1 hours")
 
         if command == 'test-module':
             test_module(client)
@@ -388,16 +421,8 @@ def main() -> None:
             Command to be called on each interval as defined in integration instance
             for fetching data and pushing to XSIAM dataset
             '''
-            next_run = {}
             last_run = demisto.getLastRun() or {}
-
-            audit_logs, next_run = fetch_events(client, fetch_limit, first_fetch, last_run)
-
-            if audit_logs:
-                send_events_to_xsiam(audit_logs, vendor=vendor, product=product)
-
-            demisto.updateModuleHealth({"eventsPulled": (len(audit_logs) or 0)})
-            demisto.setLastRun(next_run)
+            fetch_events(client, fetch_limit, first_fetch, last_run, max_iterations, vendor, product)
 
     except Exception as e:
         err_msg = f"Error in {get_integration_name()} Integration [{e}]"
