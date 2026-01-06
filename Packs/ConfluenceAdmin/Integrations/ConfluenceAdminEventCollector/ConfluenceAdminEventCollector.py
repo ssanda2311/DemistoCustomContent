@@ -40,13 +40,16 @@ class Client(BaseClient):
 
         if response:
             events_data = response.get("data", [])
-            meta_data = response.get("meta", [])
+            meta_data = response.get("meta", {})
             return events_data, meta_data
         else:
             return [], {}
 
-    def test_module(self, params: dict[str, str]):
+    def test_module(self):
         url_suffix = f"/admin/v1/orgs/{self.org_id}/events"
+        params = {
+            "limit": 1
+        }
         response = self._http_request(
             method='GET',
             url_suffix=url_suffix,
@@ -54,6 +57,7 @@ class Client(BaseClient):
             resp_type="json",
             ok_codes=[200]
         )
+        # if request was successfull then return ok else automatically an error will be logged
         return "ok"
 
 
@@ -81,9 +85,9 @@ def iso_to_milliseconds(iso_str: str) -> int:
     return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def get_last_run(data: list[dict]) -> dict:
+def get_next_run(data: list[dict]) -> dict:
     """
-    Get the info from the last run, it returns the time to query from
+    Get the info for the next run from the currently fetched events, it returns the time to query from
     """
     latest_ts = data[-1]["attributes"]["time"]
     event_ids = [data_item["id"] for data_item in data if data_item["attributes"]["time"] == latest_ts]
@@ -116,7 +120,7 @@ def deduplicate_events(data: list[dict], event_ids: list[str], fetch_time: str) 
     return updated_data
 
 
-def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: dict) -> list:
+def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: dict, max_loop_iterations: int, vendor: str, product: str) -> list:
     """
     Format the payload based on event_type i.e. (activities or aggregates) and the fetch the
     API response.
@@ -125,86 +129,106 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
 
     '''
     Number of miliseconds to push back for refetching
-    in case no duplicates are found.
+    in case no duplicate events are found.
     '''
-    refetch_grace_period_ms = 500
+    refetch_grace_period_ms = 1
 
     last_fetch = last_run.get('time')
     last_event_ids = last_run.get('ids', [])
-    cursor = last_run.get('cursor', None)
+    last_params = last_run.get("params", {})
+
+    # default value to denote if it is the first events fetch of integration
+    is_first_fetch = False
 
     if not last_fetch:
+        is_first_fetch = True
         first_fetch_dt = dateparser.parse(first_fetch, settings={'RELATIVE_BASE': datetime.now(timezone.utc)})
         last_fetch = first_fetch_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
     '''
-    flag to denote if paginated events is fetched or
-    using the from timestamp
+    Check if last fetch execution was incomplete.
+    If last_params is not empty then, use the same api parameters
+    else format new parameters
     '''
-    fetch_next_page = False
-
-    params = {
-        "limit": fetch_limit,
-        "sortOrder": "asc"
-    }
-
-    if cursor is None:
-        # Update time filter in API payload
-        # current_time = current_utc_milliseconds()
+    if not last_params:
+        '''
+        set from and to timestamp value for fetching the logs from the confluence admin api
+        '''
+        to_timestamp = current_utc_milliseconds()
         from_timestamp = iso_to_milliseconds(last_fetch)
-        params["from"] = from_timestamp
+
+        params = {
+            "limit": fetch_limit,
+            "sortOrder": "asc",
+            "from": from_timestamp,
+            "to": to_timestamp
+        }
+
+        # flag to denote if continued events are fetched
+        fetch_continued_events = False
     else:
-        params["cursor"] = cursor
-        # set flag to True when using cursor to fetch next page events
-        fetch_next_page = True
+        params = {**last_params}
 
-    '''
-    Send api call with api parameters to fetch the events
-    '''
-    events, meta_data = client.get_events(params)
-    next_cursor = meta_data.get("next")
+        # flag to denote if continued events are fetched
+        fetch_continued_events = True
+    
+    # number of iterations of while loop
+    loop_iterations = 0
+    integration_context = {**last_run}
+    dedup_check = True
+    while True:
+        # flag to denote if the while loop should terminate
+        exit_loop = False
+        fetch_params = {**params}
 
-    '''
-    if next page is fetched, then deduplication check is not required,
-    else check for duplicate events
-    '''
-    if not fetch_next_page:
         '''
-        Check if refetch is required based on following parameters:
-        - If events ids are present from last fetch
-        - If no overlapping events are found
+        Send api call with api parameters to fetch the events
         '''
-        if events and last_event_ids and not overlap_exists(events, last_event_ids):
-            # refetch logic
-            refetch_time = from_timestamp - refetch_grace_period_ms
-            params["from"] = refetch_time
+        events, meta_data = client.get_events(fetch_params)
+        next_cursor = meta_data.get("next")
 
-            demisto.updateModuleHealth(f"No overlapping event id found. Refetching with grace time(ms): {refetch_time}")
-            demisto.debug(f"No overlapping event_id found in {event_type}. Refetching with grace time(ms): {refetch_time}")
-            # fetch the events with reduced timestamp
-            events, meta_data = client.get_events(params)
-            next_cursor = meta_data.get("cursor")
+        if events:
+            if loop_iterations == 0 and not fetch_continued_events and not is_first_fetch and dedup_check:
+                dedup_check = False
+                if last_event_ids and not overlap_exists(events, last_event_ids):
+                    # refetch logic
+                    refetch_time = params["from"] - refetch_grace_period_ms
+                    params["from"] = refetch_time
 
-            if not overlap_exists(events, last_event_ids):
-                demisto.updateModuleHealth(f"Still no overlapping event_id found after refetch with time={refetch_time}. Possible API data loss.")
-                demisto.debug(f"Still no overlapping event_id found after refetch with time={refetch_time}. Possible API data loss.")
+                    demisto.updateModuleHealth(f"No overlapping event id found for api parameters: {fetch_params}. Refetching with grace time(ms): {refetch_time}")
+                    demisto.debug(f"No overlapping event id found for api parameters: {fetch_params}. Refetching with grace time(ms): {refetch_time}")
+                    # fetch the events with reduced timestamp
+                    events, meta_data = client.get_events(params)
+                    next_cursor = meta_data.get("cursor")
 
-        events = deduplicate_events(events, last_event_ids, last_fetch)
+                    if not overlap_exists(events, last_event_ids):
+                        demisto.updateModuleHealth(f"Still no overlapping events found for api parameters: {params} with refetch with time={refetch_time}. Possible API data loss.")
+                        demisto.debug(f"Still no overlapping events found for api parameters: {params} with refetch with time={refetch_time}. Possible API data loss.")
 
-    return events, next_cursor
+                events = deduplicate_events(events, last_event_ids, last_fetch)
 
+            integration_context = get_next_run(events) if events else {**last_run}
+            if next_cursor:
+                params["cursor"] = next_cursor
+            else:
+                params = {}
+                exit_loop = True
+            integration_context["params"] = params
 
-def test_module(client: Client):
-    """
-    Function to be called when test button is clicked on integration instance
-    """
-    # create base paramters to fetch test events from confluence
-    params = {
-        "limit": 1
-    }
+            send_events_to_xsiam(events, vendor=vendor, product=product, should_update_health_module=True)
 
-    response = client.test_module(params)
-    return_results(response)
+        else:
+            integration_context["params"] = {}
+            exit_loop = True
+
+        # Update integration context last run data
+        demisto.setLastRun(integration_context)
+
+        loop_iterations += 1
+
+        if loop_iterations >= max_loop_iterations or exit_loop:
+            break
+
 
 
 def main() -> None:  # pragma: no cover
@@ -222,6 +246,7 @@ def main() -> None:  # pragma: no cover
     # API Credentials
     org_id = params.get('credentials', {}).get('identifier')
     api_key = params.get('credentials', {}).get('password')
+    max_iterations = arg_to_number(params.get('maxLoopIterations', "10"))
 
     use_ssl = params.get('secure', False)
     proxy = params.get('proxy', False)
@@ -249,30 +274,16 @@ def main() -> None:  # pragma: no cover
         first_fetch = params.get("eventFirstFetch", "1 days")
 
         if command == 'test-module':
-            test_module(client)
+            return_results(client.test_module())
 
         elif command == 'fetch-events':
             '''
             Command to be called on each interval as defined in integration instance
             for fetching data and pushing to XSIAM dataset
             '''
-            next_run = {}
             last_run = demisto.getLastRun()
 
-            events, next_cursor = fetch_events(client, fetch_limit, first_fetch, last_run)
-
-            # update the next run data
-            if events:
-                send_events_to_xsiam(events, vendor=vendor, product=product)
-                next_run = get_last_run(events)
-            else:
-                next_run = last_run
-
-            next_run["cursor"] = next_cursor
-
-
-            demisto.updateModuleHealth({"eventsPulled": (len(events) or 0)})
-            demisto.setLastRun(next_run)
+            fetch_events(client, fetch_limit, first_fetch, last_run, max_iterations, vendor, product)
 
     except Exception as e:
         err_msg = f"Error in {get_integration_name()} Integration [{e}]"
