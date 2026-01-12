@@ -166,6 +166,44 @@ def fetch_update_events(client: Client, table_name: str, fetch_limit: int, first
     return events
 
 
+def fetch_historical_events(client, max_loop_iterations: int, table_name: str, fetch_limit: int, last_run: dict[str, str]):
+    next_run = {}
+    offset = last_run.get("offset", 0)
+
+    loop_iteration = 0
+    while loop_iteration < max_loop_iterations:
+
+        sysparm_query = f'life_cycle_stage_status=In Use^ORDERBYsys_created_on'
+        params = {
+            'sysparm_display_value': "all",
+            'sysparm_limit': int(fetch_limit),
+            'sysparm_offset': offset,
+            'sysparm_query': sysparm_query
+        }
+        payload = {}
+
+        response = client.snow_get_table_data(table_name, params, payload)
+        events = normalize_api_response(response)
+
+        offset += len(events)
+        is_fetch_complete = False if events else True
+        next_run = {'historical_fetch': {
+                'offset': offset,
+                'completed': is_fetch_complete
+            }
+        }
+
+        if events:
+            send_events_to_xsiam(events, vendor=VENDOR, product=table_name, should_update_health_module=True)
+
+        demisto.setLastRun(next_run)
+
+        if is_fetch_complete:
+            break
+
+        loop_iteration += 1
+
+
 def main() -> None:  # pragma: no cover
     """
     main function, parses params and runs command functions
@@ -181,6 +219,7 @@ def main() -> None:  # pragma: no cover
     use_ssl = not params.get('insecure', False)
     proxy = params.get('proxy', False)
     table = params.get('table')
+    max_loop_iteration = arg_to_number(params.get('max_iteration', '10'))
 
     headers = {
        "accept": "application/json",
@@ -199,7 +238,7 @@ def main() -> None:  # pragma: no cover
 
     command = demisto.command()
     try:
-        fetch_limit = params.get("eventFetchLimit", 100)
+        fetch_limit = params.get("eventFetchLimit", 1000)
         first_fetch = params.get("eventFirstFetch", "1 days")
 
         if command == 'test-module':
@@ -215,41 +254,58 @@ def main() -> None:  # pragma: no cover
 
 
         elif command == 'fetch-events':
-            next_run = {"sys_created": {}, "sys_updated": {}}
+            next_run = {"sys_created": {}, "sys_updated": {}, "historical_fetch": {}}
             last_run = demisto.getLastRun() or {}
+            
+            '''
+            1. Fetch historical events first
+            2. Check if historical events to be fetched or not
+            3. If not complete then fetch the historical events based on offset value else stop
+            4. Don't set historical events fetch completed until the results is not empty
+            '''
+            historical_events_fetched = last_run.get("historical_fetch", {}).get("completed", False)
+            if not historical_events_fetched:
+                fetch_historical_events(client, max_loop_iteration, table, fetch_limit, last_run.get("historical_fetch", {}))
 
-            total_events_fetched = 0
-            for table_name in table:
-                # fetch the created events
-                last_run_created = last_run.get("sys_created", {})
-                created_events = fetch_create_events(client, table_name, fetch_limit, first_fetch, last_run_created.get(table_name, {}))
 
-                if created_events:
-                    total_events_fetched += len(created_events)
-                    send_events_to_xsiam(created_events, vendor=VENDOR, product=f'{table_name}')
-                    next_run["sys_created"][table_name] = get_last_run(created_events)
-                else:
-                    next_run["sys_created"][table_name] = last_run_created.get(table_name)
+
+
+            # '''
+            # 2. Fetch regular create and update events
+            # '''
+
+            # total_events_fetched = 0
+            # for table_name in table:
+            #     # fetch the created events
+            #     last_run_created = last_run.get("sys_created", {})
+            #     created_events = fetch_create_events(client, table_name, fetch_limit, first_fetch, last_run_created.get(table_name, {}))
+
+            #     if created_events:
+            #         total_events_fetched += len(created_events)
+            #         send_events_to_xsiam(created_events, vendor=VENDOR, product=f'{table_name}')
+            #         next_run["sys_created"][table_name] = get_last_run(created_events)
+            #     else:
+            #         next_run["sys_created"][table_name] = last_run_created.get(table_name)
                 
-                # fetch the updated events
-                last_run_updated = last_run.get("sys_updated", {})
-                updated_events = fetch_update_events(client, table_name, fetch_limit, first_fetch, last_run_updated.get(table_name, {}))
+            #     # fetch the updated events
+            #     last_run_updated = last_run.get("sys_updated", {})
+            #     updated_events = fetch_update_events(client, table_name, fetch_limit, first_fetch, last_run_updated.get(table_name, {}))
 
-                if updated_events:
-                    total_events_fetched += len(created_events)
-                    send_events_to_xsiam(updated_events, vendor=VENDOR, product=f'{table_name}')
-                    next_run["sys_updated"][table_name] = get_last_run(updated_events)
-                else:
-                    next_run["sys_updated"][table_name] = last_run_updated.get(table_name)
+            #     if updated_events:
+            #         total_events_fetched += len(created_events)
+            #         send_events_to_xsiam(updated_events, vendor=VENDOR, product=f'{table_name}')
+            #         next_run["sys_updated"][table_name] = get_last_run(updated_events)
+            #     else:
+            #         next_run["sys_updated"][table_name] = last_run_updated.get(table_name)
 
 
-            # check if data exist in next run for the tables
-            # else set last run as next run
-            if not next_run:
-                next_run = last_run
+            # # check if data exist in next run for the tables
+            # # else set last run as next run
+            # if not next_run:
+            #     next_run = last_run
 
-            demisto.updateModuleHealth({"eventsPulled": total_events_fetched})
-            demisto.setLastRun(next_run)
+            # demisto.updateModuleHealth({"eventsPulled": total_events_fetched})
+            # demisto.setLastRun(next_run)
 
     except Exception as e:
         return_error(f"{str(e)}. Traceback: {traceback.format_exc()}")

@@ -66,21 +66,35 @@ configuration:
   defaultvalue: "100"
   type: 0
   required: false
-- section: Collect
+- section: Connect
   display: Table
   name: table
-  type: 16
-  required: false
+  type: 15
+  required: true
   options:
-  - sys_user
-  - cmdb_ci_netgear
   - cmdb_ci_computer
+  - cmdb_ci_server
+  - cmdb_ci_handheld_computing
+  - cmdb_ci_netgear
   additionalinfo: Select the table name to be fetched
 - section: Collect
   display: Fetch Events
   name: isFetchEvents
   type: 8
   required: false
+- section: Collect
+  advanced: true
+  display: Events Fetch Interval
+  name: eventFetchInterval
+  defaultvalue: "1"
+  type: 19
+  required: false
+- section: Collect
+  display: ""
+  name: max_iteration
+  defaultvalue: 10
+  type: 0
+  required: true
 script:
   type: python
   dockerimage: demisto/python3:3.12.8.3296088
