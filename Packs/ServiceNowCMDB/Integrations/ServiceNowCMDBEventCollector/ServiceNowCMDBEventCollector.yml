@@ -95,6 +95,13 @@ configuration:
   defaultvalue: 10
   type: 0
   required: true
+- section: Collect
+  display: Should Fetch Historical Data
+  name: fetch_historical_data
+  defaultvalue: "false"
+  type: 8
+  required: false
+  additionalinfo: Set to true if historical data has to be fetched else false
 script:
   type: python
   dockerimage: demisto/python3:3.12.8.3296088

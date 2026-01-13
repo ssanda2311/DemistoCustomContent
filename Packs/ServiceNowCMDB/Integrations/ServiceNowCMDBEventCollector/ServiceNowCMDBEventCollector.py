@@ -30,6 +30,7 @@ class Client(BaseClient):
             f'/api/now/table/{table}',
             params=params,
             json_data=payload,
+            timeout=60,
             resp_type="response"
         )
 
@@ -220,6 +221,7 @@ def main() -> None:  # pragma: no cover
     proxy = params.get('proxy', False)
     table = params.get('table')
     max_loop_iteration = arg_to_number(params.get('max_iteration', '10'))
+    fetch_historical_data = argToBoolean(params.get('fetch_historical_data', 'false'))
 
     headers = {
        "accept": "application/json",
@@ -254,7 +256,6 @@ def main() -> None:  # pragma: no cover
 
 
         elif command == 'fetch-events':
-            next_run = {"sys_created": {}, "sys_updated": {}, "historical_fetch": {}}
             last_run = demisto.getLastRun() or {}
             
             '''
@@ -263,49 +264,47 @@ def main() -> None:  # pragma: no cover
             3. If not complete then fetch the historical events based on offset value else stop
             4. Don't set historical events fetch completed until the results is not empty
             '''
-            historical_events_fetched = last_run.get("historical_fetch", {}).get("completed", False)
-            if not historical_events_fetched:
-                fetch_historical_events(client, max_loop_iteration, table, fetch_limit, last_run.get("historical_fetch", {}))
-
-
-
+            historical_last_run = last_run.get("historical_fetch", {})
+            next_run = {"sys_created": {}, "sys_updated": {}, "historical_fetch": historical_last_run}
+            historical_events_fetched = historical_last_run.get("completed", False)
+            if not historical_events_fetched and fetch_historical_data:
+                fetch_historical_events(client, max_loop_iteration, table, fetch_limit, historical_last_run)
 
             # '''
             # 2. Fetch regular create and update events
             # '''
+            else:
+                total_events_fetched = 0
 
-            # total_events_fetched = 0
-            # for table_name in table:
-            #     # fetch the created events
-            #     last_run_created = last_run.get("sys_created", {})
-            #     created_events = fetch_create_events(client, table_name, fetch_limit, first_fetch, last_run_created.get(table_name, {}))
+                # fetch the created events
+                last_run_created = last_run.get("sys_created", {})
+                created_events = fetch_create_events(client, table, fetch_limit, first_fetch, last_run_created)
 
-            #     if created_events:
-            #         total_events_fetched += len(created_events)
-            #         send_events_to_xsiam(created_events, vendor=VENDOR, product=f'{table_name}')
-            #         next_run["sys_created"][table_name] = get_last_run(created_events)
-            #     else:
-            #         next_run["sys_created"][table_name] = last_run_created.get(table_name)
+                if created_events:
+                    total_events_fetched += len(created_events)
+                    send_events_to_xsiam(created_events, vendor=VENDOR, product=table, should_update_health_module=True)
+                    next_run["sys_created"] = get_last_run(created_events)
+                else:
+                    next_run["sys_created"] = last_run_created
                 
-            #     # fetch the updated events
-            #     last_run_updated = last_run.get("sys_updated", {})
-            #     updated_events = fetch_update_events(client, table_name, fetch_limit, first_fetch, last_run_updated.get(table_name, {}))
+                # fetch the updated events
+                last_run_updated = last_run.get("sys_updated", {})
+                updated_events = fetch_update_events(client, table, fetch_limit, first_fetch, last_run_updated)
 
-            #     if updated_events:
-            #         total_events_fetched += len(created_events)
-            #         send_events_to_xsiam(updated_events, vendor=VENDOR, product=f'{table_name}')
-            #         next_run["sys_updated"][table_name] = get_last_run(updated_events)
-            #     else:
-            #         next_run["sys_updated"][table_name] = last_run_updated.get(table_name)
+                if updated_events:
+                    total_events_fetched += len(created_events)
+                    send_events_to_xsiam(updated_events, vendor=VENDOR, product=table, should_update_health_module=True)
+                    next_run["sys_updated"] = get_last_run(updated_events)
+                else:
+                    next_run["sys_updated"] = last_run_updated
 
 
-            # # check if data exist in next run for the tables
-            # # else set last run as next run
-            # if not next_run:
-            #     next_run = last_run
+                # check if data exist in next run for the tables
+                # else set last run as next run
+                if not next_run:
+                    next_run = last_run
 
-            # demisto.updateModuleHealth({"eventsPulled": total_events_fetched})
-            # demisto.setLastRun(next_run)
+                demisto.setLastRun(next_run)
 
     except Exception as e:
         return_error(f"{str(e)}. Traceback: {traceback.format_exc()}")
