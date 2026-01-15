@@ -1,9 +1,13 @@
+register_module_line('ProofpointITMEventCollector', 'start', __line__())
+CONSTANT_PACK_VERSION = '1.0.0'
+demisto.debug('pack id = ProofpointITM, pack version = 1.0.0')
 from datetime import datetime, timedelta, timezone
 import urllib3
 import json
 import requests
 import dateparser
 from typing import Any, Optional
+import copy
 
 urllib3.disable_warnings()
 
@@ -54,17 +58,17 @@ class Client(BaseClient):
         result = None
         if refresh_token:
             result = self.refresh_auth_token(refresh_token)
-        
+
         # Generate token using credentials if refresh failed
         if not result:
             demisto.debug("Refresh token invalid or missing — generating new access token.")
             result = self.generate_auth_token()
-        
+
         expiry_time = date_to_timestamp(datetime.now())
 
         '''
-        Create token expiry time in miliseconds by reducing 'token_expiry_buffer_seconds' from the 
-        original expiry time received from auth token response and multiply by 'millisecond_in_second' 
+        Create token expiry time in miliseconds by reducing 'token_expiry_buffer_seconds' from the
+        original expiry time received from auth token response and multiply by 'millisecond_in_second'
         to convert into miliseconds
         '''
         expiry_time += (result['expires_in'] - token_expiry_buffer_seconds) * millisecond_in_second
@@ -90,10 +94,10 @@ class Client(BaseClient):
         }
 
         response = self._http_request(
-            'POST', 
-            '/v2/apis/auth/oauth/token', 
-            headers=headers, 
-            data=payload, 
+            'POST',
+            '/v2/apis/auth/oauth/token',
+            headers=headers,
+            data=payload,
             ok_codes=[200]
         )
         return response
@@ -112,10 +116,10 @@ class Client(BaseClient):
 
         try:
             response = self._http_request(
-                'POST', 
-                '/v2/apis/auth/oauth/token', 
-                headers=headers, 
-                data=payload, 
+                'POST',
+                '/v2/apis/auth/oauth/token',
+                headers=headers,
+                data=payload,
                 ok_codes=[200]
             )
 
@@ -255,13 +259,6 @@ def get_activities_base_payload() -> dict:
         }
     }
 
-def timestamp_format(timestamp: datetime) -> str:
-    """
-    Convert datetime format to string format
-    """
-    time_string = timestamp.strftime("%Y-%m-%dT%H:%M:%S")
-    return time_string
-
 
 def current_utc_milliseconds() -> int:
     """
@@ -278,17 +275,20 @@ def iso_to_milliseconds(iso_str: str) -> int:
     return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def get_last_run(data: list[dict]) -> dict:
+def get_next_run(data: list[dict], event_type: str, last_run: dict[str, str]) -> dict:
     """
-    Get the info from the last run, it returns the time to query from
+    Get the info from the current run, it returns the time to query from
     """
-    latest_ts = data[-1]["event"]["observedAt"]
-    event_ids = [data_item["event"]["id"] for data_item in data if data_item["event"]["observedAt"] == latest_ts]
+    next_run = copy.deepcopy(last_run)
 
-    next_run = {
-        'observed_at': latest_ts,
-        'event_ids': event_ids
-    }
+    if data:
+        latest_ts = data[-1]["event"]["observedAt"]
+        event_ids = [data_item["event"]["id"] for data_item in data if data_item["event"]["observedAt"] == latest_ts]
+
+        next_run[event_type] = {
+            'observed_at': latest_ts,
+            'event_ids': event_ids
+        }
 
     return next_run
 
@@ -326,39 +326,49 @@ def update_time_filters(payload: dict, start_time: Optional[int] = None, end_tim
     return payload
 
 
-def fetch_events(client: Client, event_type: str, fetch_limit: int, first_fetch: str, last_run: dict) -> list:
+def fetch_events(client: Client, event_type: str, fetch_limit: int, first_fetch: str, last_run: dict, max_loop_iterations: int, vendor: str, product: str) -> list:
     """
-    Format the payload based on event_type i.e. (activities or aggregates) and the fetch the 
+    Format the payload based on event_type i.e. (activities or aggregates) and the fetch the
     API response.
     Perform deduplication of fetched response by comparing with the previous fetch
     """
-    url_suffix = f"/v2/apis/activity/event-queries?offset=0&limit={fetch_limit}&includes=screenshots&sources=cloud:isolation,email:pps,endpoint:agent,platform:analytics&trackTotalHits=false"
-    
+    # url suffix template
+    url_suffix_template = (
+        "/v2/apis/activity/event-queries"
+        "?offset={offset}"
+        "&limit={fetch_limit}"
+        "&includes=screenshots"
+        "&sources=cloud:isolation,email:pps,endpoint:agent,platform:analytics"
+        "&trackTotalHits=false"
+    )
+
     '''
-    Number of miliseconds to push back for refetching 
+    Number of miliseconds to push back for refetching
     in case no duplicates are found.
     '''
-    refetch_grace_period_ms = 1000 
+    refetch_grace_period_ms = 1000
 
-    last_fetch = last_run.get('observed_at')
-    last_event_ids = last_run.get('event_ids', [])
+    last_run_data = last_run.get(event_type, {})
+
+    last_fetch = last_run_data.get('observed_at')
+    last_event_ids = last_run_data.get('event_ids', [])
+    offset = last_run_data.get('offset', 0)
 
     if not last_fetch:
         first_fetch_dt = dateparser.parse(first_fetch, settings={'RELATIVE_BASE': datetime.now(timezone.utc)})
         last_fetch = first_fetch_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
-    payload = get_activities_base_payload()  # get the base payload for activities API call
+    # get the base payload for activities API call
+    payload = get_activities_base_payload()
 
     # Update time filter in API payload
     current_time = current_utc_milliseconds()
     last_fetch_ms = iso_to_milliseconds(last_fetch)
     payload = update_time_filters(payload, last_fetch_ms, current_time)
 
-    # demisto.updateModuleHealth(f"Current time: {current_time}\nLast Fetch: {last_fetch_ms}\nPayload: {json.dumps(payload)}")
-
     '''
     Aggreagates fetch part is no longer in use
-    
+
     if event_type == "aggregates":
         # Update aggregates to payload
         payload ["aggregates"] = [
@@ -412,38 +422,66 @@ def fetch_events(client: Client, event_type: str, fetch_limit: int, first_fetch:
         ]
     '''
 
-    '''
-    Send api call with url suffix and json payload to 
-    get the Activities event data
-    '''
-    events = client.proofpoint_get_events(url_suffix, payload)
 
-    '''
-    Check if refetch is required based on following parameters:
-    - If events are fetched in current run
-    - If events ids are present from last fetch
-    - If no overlapping events are found
-    '''
-    if events and last_event_ids and not overlap_exists(events, last_event_ids):
-        # refetch logic
-        refetch_time = last_fetch_ms - refetch_grace_period_ms
-        payload = update_time_filters(payload, refetch_time)
+    # number of iterations of while loop
+    loop_iterations = 0
 
-        demisto.updateModuleHealth(f"No overlapping event_id found in {event_type}. Refetching with grace time(ms): {refetch_time}")
-        demisto.debug(f"No overlapping event_id found in {event_type}. Refetching with grace time(ms): {refetch_time}")
+    while True:
+        '''
+        Send api call with url suffix and json payload to
+        get the Activities event data
+        '''
+        url_suffix = url_suffix_template.format(offset=offset, fetch_limit=fetch_limit)
         events = client.proofpoint_get_events(url_suffix, payload)
 
-        if not overlap_exists(events, last_event_ids):
-            demisto.updateModuleHealth(f"Still no overlapping event_id found in {event_type} after refetch. Possible API data loss.")
-            demisto.debug(f"Still no overlapping event_id found in {event_type} after refetch. Possible API data loss.")
+        '''
+        Check if refetch is required based on following parameters:
+        - If events are fetched in current run
+        - If offset is 0, means these are not the continuation events
+        - If events ids are present from last fetch
+        - If no overlapping events are found
+        '''
+        if events and offset == 0 and last_event_ids and not overlap_exists(events, last_event_ids):
+            # refetch logic
+            refetch_time = last_fetch_ms - refetch_grace_period_ms
+            payload = update_time_filters(payload, refetch_time)
 
-    events = deduplicate_events(events, last_event_ids, last_fetch)
-    
-    # add event type key to the events: activities/aggreagtes
-    for event in events:
-        event["event_type"] = event_type
+            demisto.updateModuleHealth(f"No overlapping event_id found in {event_type}. Refetching with grace time(ms): {refetch_time}")
+            demisto.debug(f"No overlapping event_id found in {event_type}. Refetching with grace time(ms): {refetch_time}")
+            events = client.proofpoint_get_events(url_suffix, payload)
 
-    return events
+            if not overlap_exists(events, last_event_ids):
+                demisto.updateModuleHealth(f"Still no overlapping event_id found in {event_type} after refetch. Possible API data loss.")
+                demisto.debug(f"Still no overlapping event_id found in {event_type} after refetch. Possible API data loss.")
+
+        original_num_events = len(events)
+        events = deduplicate_events(events, last_event_ids, last_fetch)
+
+        if events:
+            # get the next run data for the event type
+            next_run = get_next_run(events, event_type, last_run)
+            latest_observed_at = next_run[event_type]["observed_at"]
+            latest_events_ids = next_run[event_type]["event_ids"]
+
+            '''
+            If the latest event timestamp equals to last fetch timestamp,
+            then increse the ofset value else reset to 0
+            '''
+            if latest_observed_at == last_fetch:
+                last_event_ids = copy.deepcopy(latest_events_ids)
+                last_fetch = latest_observed_at
+                offset += original_num_events
+            else:
+                offset = 0
+            next_run[event_type]['offset'] = offset
+
+            send_events_to_xsiam(events, vendor=vendor, product=product, should_update_health_module=True)
+            # Update integration context last run data
+            demisto.setLastRun(next_run)
+
+        loop_iterations += 1
+        if offset == 0 or loop_iterations >= max_loop_iterations or not events:
+            break
 
 
 def test_module(client: Client):
@@ -481,6 +519,7 @@ def main() -> None:  # pragma: no cover
     # API Credentials
     client_id = params.get('credentials', {}).get('identifier')
     client_secret = params.get('credentials', {}).get('password')
+    max_iterations = arg_to_number(params.get('maxLoopIterations', "10"))
 
     use_ssl = params.get('secure', False)
     proxy = params.get('proxy', False)
@@ -513,45 +552,23 @@ def main() -> None:  # pragma: no cover
 
         elif command == 'fetch-events':
             '''
-            Command to be called on each interval as defined in integration instance 
+            Command to be called on each interval as defined in integration instance
             for fetching data and pushing to XSIAM dataset
             '''
-
-            next_run = {}
             last_run = demisto.getLastRun()
+            fetch_events(client, 'activities', fetch_limit, first_fetch, last_run, max_iterations, vendor, product)
 
-            if not last_run:
-                activities_last_run = {}
-                # aggregates_last_run = {}
-            else:
-                activities_last_run = last_run.get('activities', {})
-                # aggregates_last_run = last_run.get('aggregates', {})
 
-            activities_data = fetch_events(client, 'activities', fetch_limit, first_fetch, activities_last_run)
-    
-            if activities_data:
-                send_events_to_xsiam(activities_data, vendor=vendor, product=product)
-                next_run['activities'] = get_last_run(activities_data)
-            else:
-                next_run['activities'] = last_run.get('activities')
-            
             '''
             Commenting the aggregates fetch as it also returns the same events data as activities.
-            Along with same event data as activities, aggregates contains some additional information 
+            Along with same event data as activities, aggregates contains some additional information
             which is not required for XSIAM use case.
             '''
             '''
-            aggregates_data = fetch_events(client, 'aggregates', fetch_limit, first_fetch, aggregates_last_run)
+            last_run = demisto.getLastRun()
+            fetch_events(client, 'aggregates', fetch_limit, first_fetch, aggregates_last_run)
 
-            if aggregates_data:
-                send_events_to_xsiam(aggregates_data, vendor=vendor, product=product)
-                next_run['aggregates'] = get_last_run(aggregates_data)
-            else:
-                next_run['aggregates'] = last_run.get('aggregates')
             '''
-
-            # demisto.updateModuleHealth({"eventsPulled": (len(activities_data) or 0)})
-            demisto.setLastRun(next_run)
 
     except Exception as e:
         err_msg = f"Error in {get_integration_name()} Integration [{e}]"
@@ -562,3 +579,4 @@ def main() -> None:  # pragma: no cover
 
 if __name__ in ("__main__", "__builtin__", "builtins"):
     main()
+register_module_line('ProofpointITMEventCollector', 'end', __line__())
