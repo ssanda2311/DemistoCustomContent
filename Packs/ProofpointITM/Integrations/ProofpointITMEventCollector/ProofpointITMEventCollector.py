@@ -171,7 +171,7 @@ def get_activities_base_payload() -> dict:
     return {
         "sort": [
             {
-                "event.observedAt": {
+                "event.ingestedAt": {
                     "order": "asc",
                     "unmapped_type": "boolean"
                 }
@@ -247,12 +247,12 @@ def get_activities_base_payload() -> dict:
                 },
                 {
                     "$datetimeGE": {
-                        "event.observedAt": ""
+                        "event.ingestedAt": ""
                     }
                 },
                 {
                     "$datetimeLT": {
-                        "event.observedAt": ""
+                        "event.ingestedAt": ""
                     }
                 }
             ]
@@ -275,18 +275,18 @@ def iso_to_milliseconds(iso_str: str) -> int:
     return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
 
 
-def get_next_run(data: list[dict], event_type: str, last_run: dict[str, str]) -> dict:
+def get_next_run(data: list[dict], last_run: dict[str, str]) -> dict:
     """
     Get the info from the current run, it returns the time to query from
     """
     next_run = copy.deepcopy(last_run)
 
     if data:
-        latest_ts = data[-1]["event"]["observedAt"]
-        event_ids = [data_item["event"]["id"] for data_item in data if data_item["event"]["observedAt"] == latest_ts]
+        latest_ts = data[-1]["event"]["ingestedAt"]
+        event_ids = [data_item["event"]["id"] for data_item in data if data_item["event"]["ingestedAt"] == latest_ts]
 
-        next_run[event_type] = {
-            'observed_at': latest_ts,
+        next_run = {
+            'ingested_at': latest_ts,
             'event_ids': event_ids
         }
 
@@ -308,27 +308,27 @@ def deduplicate_events(data: list[dict], event_ids: list[str], fetch_time: str) 
     """
     updated_data = [data_item for data_item in data if
                         data_item["event"]["id"] not in event_ids and
-                        iso_to_milliseconds(data_item["event"]["observedAt"]) >= iso_to_milliseconds(fetch_time)
+                        iso_to_milliseconds(data_item["event"]["ingestedAt"]) >= iso_to_milliseconds(fetch_time)
                     ]
     return updated_data
 
 
 def update_time_filters(payload: dict, start_time: Optional[int] = None, end_time: Optional[int] = None) -> dict:
     """
-    Update the event.observedAt time filters in API payload for fetching the Aggregates and Activities
+    Update the event.ingestedAt time filters in API payload for fetching the Aggregates and Activities
     """
     for _filter in payload["filters"]["$and"]:
         if start_time and "$datetimeGE" in _filter:
-            _filter["$datetimeGE"]["event.observedAt"] = start_time
+            _filter["$datetimeGE"]["event.ingestedAt"] = start_time
 
         if end_time and "$datetimeLT" in _filter:
-            _filter["$datetimeLT"]["event.observedAt"] = end_time
+            _filter["$datetimeLT"]["event.ingestedAt"] = end_time
     return payload
 
 
-def fetch_events(client: Client, event_type: str, fetch_limit: int, first_fetch: str, last_run: dict, max_loop_iterations: int, vendor: str, product: str) -> list:
+def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: dict, max_loop_iterations: int, vendor: str, product: str) -> list:
     """
-    Format the payload based on event_type i.e. (activities or aggregates) and the fetch the
+    Format the payload based on event_type i.e. (activities) and the fetch the
     API response.
     Perform deduplication of fetched response by comparing with the previous fetch
     """
@@ -348,83 +348,30 @@ def fetch_events(client: Client, event_type: str, fetch_limit: int, first_fetch:
     '''
     refetch_grace_period_ms = 1000
 
-    last_run_data = last_run.get(event_type, {})
-
-    last_fetch = last_run_data.get('observed_at')
-    last_event_ids = last_run_data.get('event_ids', [])
-    offset = last_run_data.get('offset', 0)
+    last_fetch = last_run.get('ingested_at')
+    last_event_ids = last_run.get('event_ids', [])
+    offset = last_run.get('offset', 0)
+    payload = last_run.get('payload', None)
 
     if not last_fetch:
         first_fetch_dt = dateparser.parse(first_fetch, settings={'RELATIVE_BASE': datetime.now(timezone.utc)})
         last_fetch = first_fetch_dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
-    # get the base payload for activities API call
-    payload = get_activities_base_payload()
+    if not payload:
+        # get the base payload for activities API call
+        payload = get_activities_base_payload()
 
-    # Update time filter in API payload
-    current_time = current_utc_milliseconds()
-    last_fetch_ms = iso_to_milliseconds(last_fetch)
-    payload = update_time_filters(payload, last_fetch_ms, current_time)
-
-    '''
-    Aggreagates fetch part is no longer in use
-
-    if event_type == "aggregates":
-        # Update aggregates to payload
-        payload ["aggregates"] = [
-            {
-                "aggregateName": "verifyAlertBulkActions",
-                "sources": [
-                    {
-                        "type": "terms",
-                        "field": "incident.severity",
-                        "order": {
-                        "_count": "desc"
-                        },
-                        "size": 100,
-                        "missing": ""
-                    }
-                ]
-            },
-            {
-                "aggregateName": "activity.categories",
-                "sources": [
-                    {
-                        "type": "cardinality",
-                        "field": "activity.categories"
-                    }
-                ]
-            },
-            {
-                "aggregateName": "user.aliases.name",
-                "sources": [
-                    {
-                        "type": "cardinality",
-                        "field": "user.aliases.name"
-                    }
-                ]
-            },
-            {
-                "aggregateName": "histogram",
-                "sources": [
-                    {
-                        "type": "date_histogram",
-                        "field": "event.observedAt",
-                        "interval": "1080s",
-                        "min_doc_count": 0,
-                        "extended_bounds": {
-                            "min": "2025-09-15T06:04:10.771Z",
-                            "max": "2025-09-16T06:04:10.771Z"
-                        }
-                    }
-                ]
-            }
-        ]
-    '''
+        # Update time filter in API payload
+        current_time = current_utc_milliseconds()
+        last_fetch_ms = iso_to_milliseconds(last_fetch)
+        payload = update_time_filters(payload, last_fetch_ms, current_time)
 
 
     # number of iterations of while loop
     loop_iterations = 0
+
+    integration_context = copy.deepcopy(last_run)
+    exit_loop = False
 
     while True:
         '''
@@ -459,28 +406,32 @@ def fetch_events(client: Client, event_type: str, fetch_limit: int, first_fetch:
 
         if events:
             # get the next run data for the event type
-            next_run = get_next_run(events, event_type, last_run)
-            latest_observed_at = next_run[event_type]["observed_at"]
-            latest_events_ids = next_run[event_type]["event_ids"]
+            next_run = get_next_run(events, last_run)
 
-            '''
-            If the latest event timestamp equals to last fetch timestamp,
-            then increse the ofset value else reset to 0
-            '''
-            if latest_observed_at == last_fetch:
-                last_event_ids = copy.deepcopy(latest_events_ids)
-                last_fetch = latest_observed_at
-                offset += original_num_events
-            else:
-                offset = 0
-            next_run[event_type]['offset'] = offset
+            # update last fetch time and id to remove duplicate events
+            last_event_ids = next_run["event_ids"]
+            last_fetch = next_run["ingested_at"]
+
+            # update offset value to fetcg continuing events
+            offset += original_num_events
+
+            next_run['offset'] = offset
+            next_run['payload'] = payload
+
+            # update the integration context
+            integration_context = {**next_run}
 
             send_events_to_xsiam(events, vendor=vendor, product=product, should_update_health_module=True)
-            # Update integration context last run data
-            demisto.setLastRun(next_run)
+        else:
+            integration_context['payload'] = None
+            integration_context['offset'] = 0
+            exit_loop = True
+        
+        # Update integration context last run data
+        demisto.setLastRun(integration_context)
 
         loop_iterations += 1
-        if offset == 0 or loop_iterations >= max_loop_iterations or not events:
+        if loop_iterations >= max_loop_iterations or exit_loop:
             break
 
 
@@ -556,19 +507,7 @@ def main() -> None:  # pragma: no cover
             for fetching data and pushing to XSIAM dataset
             '''
             last_run = demisto.getLastRun()
-            fetch_events(client, 'activities', fetch_limit, first_fetch, last_run, max_iterations, vendor, product)
-
-
-            '''
-            Commenting the aggregates fetch as it also returns the same events data as activities.
-            Along with same event data as activities, aggregates contains some additional information
-            which is not required for XSIAM use case.
-            '''
-            '''
-            last_run = demisto.getLastRun()
-            fetch_events(client, 'aggregates', fetch_limit, first_fetch, aggregates_last_run)
-
-            '''
+            fetch_events(client, fetch_limit, first_fetch, last_run, max_iterations, vendor, product)
 
     except Exception as e:
         err_msg = f"Error in {get_integration_name()} Integration [{e}]"

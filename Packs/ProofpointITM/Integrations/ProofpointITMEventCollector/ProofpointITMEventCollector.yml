@@ -70,6 +70,14 @@ configuration:
   defaultvalue: "500"
   type: 0
   required: false
+- section: Collect
+  supportedModules: []
+  display: Max Loop Iterations
+  name: maxLoopIterations
+  defaultvalue: "10"
+  type: 0
+  required: false
+  additionalinfo: Number of itertaions of logs fetch for each xsiam event fetch operation
 script:
   type: python
   dockerimage: demisto/python3:3.12.8.3296088
