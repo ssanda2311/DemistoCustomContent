@@ -30,7 +30,7 @@ class Client(BaseClient):
             f'/api/now/table/{table}',
             params=params,
             json_data=payload,
-            timeout=60,
+            timeout=180,
             resp_type="response"
         )
 
@@ -122,7 +122,7 @@ def fetch_create_events(client: Client, table_name: str, fetch_limit: int, first
     if not last_fetch:
         first_fetch_dt = dateparser.parse(first_fetch, settings={'RELATIVE_BASE': datetime.now(timezone.utc)})
         last_fetch = first_fetch_dt.strftime("%Y-%m-%d %H:%M:%S")
-
+    
     sysparm_query = f'sys_created_on>={last_fetch}^ORDERBYsys_created_on'
     params = {
         'sysparm_display_value': "all",
@@ -173,8 +173,12 @@ def fetch_historical_events(client, max_loop_iterations: int, table_name: str, f
 
     loop_iteration = 0
     while loop_iteration < max_loop_iterations:
+        
+        if table_name not in ("sn_vul_vulnerable_item"):
+            sysparm_query = f'life_cycle_stage_status=In Use^ORDERBYsys_created_on'
+        else:
+            sysparm_query = f'^ORDERBYsys_created_on'
 
-        sysparm_query = f'life_cycle_stage_status=In Use^ORDERBYsys_created_on'
         params = {
             'sysparm_display_value': "all",
             'sysparm_limit': int(fetch_limit),
@@ -220,6 +224,9 @@ def main() -> None:  # pragma: no cover
     use_ssl = not params.get('insecure', False)
     proxy = params.get('proxy', False)
     table = params.get('table')
+
+
+
     max_loop_iteration = arg_to_number(params.get('max_iteration', '10'))
     fetch_historical_data = argToBoolean(params.get('fetch_historical_data', 'false'))
 
