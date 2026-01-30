@@ -1,6 +1,3 @@
-register_module_line('ProofpointITMEventCollector', 'start', __line__())
-CONSTANT_PACK_VERSION = '1.0.0'
-demisto.debug('pack id = ProofpointITM, pack version = 1.0.0')
 from datetime import datetime, timedelta, timezone
 import urllib3
 import json
@@ -8,6 +5,7 @@ import requests
 import dateparser
 from typing import Any, Optional
 import copy
+import demistomock as demisto
 
 urllib3.disable_warnings()
 
@@ -518,4 +516,3 @@ def main() -> None:  # pragma: no cover
 
 if __name__ in ("__main__", "__builtin__", "builtins"):
     main()
-register_module_line('ProofpointITMEventCollector', 'end', __line__())
