@@ -8,4 +8,4 @@ if [ -z "$PACK_PATH" ]; then
 fi
 
 
-python3 demisto_sdk/__main__.py upload -i "${PACK_PATH}" --xsiam
+python3 ./demisto_sdk/__main__.py upload -i "${PACK_PATH}" --xsiam

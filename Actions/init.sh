@@ -7,6 +7,5 @@ if [ -z "$PACK_NAME" ]; then
   exit 1
 fi
 
-cd ..
 
-python3 demisto_sdk/__main__.py init --pack -n "${PACK_NAME}" --xsiam -o Packs   
+python3 ./demisto_sdk/__main__.py init --pack -n "${PACK_NAME}" --xsiam -o ./Packs   
