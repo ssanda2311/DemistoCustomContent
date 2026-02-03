@@ -1,6 +1,3 @@
-register_module_line('AWS S3 Radware', 'start', __line__())
-CONSTANT_PACK_VERSION = '1.0.0'
-demisto.debug('pack id = AWSS3Radware, pack version = 1.0.0')
 from datetime import datetime, timedelta, timezone
 from urllib.parse import unquote_plus
 import dateparser
@@ -214,4 +211,3 @@ def main() -> None:
 
 if __name__ in ("__main__", "__builtin__", "builtins"):
     main()
-register_module_line('AWS S3 Radware', 'end', __line__())

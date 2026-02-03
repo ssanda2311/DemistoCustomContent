@@ -119,6 +119,6 @@ script:
   subtype: python3
   isfetchevents: true
   runonce: false
-sourcemoduleid: AzureDevOpsEventCollector
+sourcemoduleid: AWSS3Radware
 signature: ""
 restrictioncenter: {}
