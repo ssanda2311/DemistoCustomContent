@@ -10,7 +10,10 @@ import traceback
 urllib3.disable_warnings()
 
 VENDOR = "ServiceNow"
-# PRODUCT = "CMDB"
+PRODUCT_TABLE_MAPPING = {
+    "sn_vul_third_party_entry": "snow_qualys_sn_vul_third_party_entry",
+    "sn_vul_vulnerable_item": "snow_qualys_sn_vul_vulnerable_item"
+}
 
 
 class Client(BaseClient):
@@ -174,7 +177,7 @@ def fetch_historical_events(client, max_loop_iterations: int, table_name: str, f
     loop_iteration = 0
     while loop_iteration < max_loop_iterations:
         
-        if table_name not in ("sn_vul_vulnerable_item"):
+        if table_name not in ("sn_vul_vulnerable_item", "sn_vul_third_party_entry"):
             sysparm_query = f'life_cycle_stage_status=In Use^ORDERBYsys_created_on'
         else:
             sysparm_query = f'^ORDERBYsys_created_on'
@@ -199,7 +202,7 @@ def fetch_historical_events(client, max_loop_iterations: int, table_name: str, f
         }
 
         if events:
-            send_events_to_xsiam(events, vendor=VENDOR, product=table_name, should_update_health_module=True)
+            send_events_to_xsiam(events, vendor=VENDOR, product=PRODUCT_TABLE_MAPPING.get(table_name, table_name), should_update_health_module=True)
 
         demisto.setLastRun(next_run)
 
@@ -289,7 +292,7 @@ def main() -> None:  # pragma: no cover
 
                 if created_events:
                     total_events_fetched += len(created_events)
-                    send_events_to_xsiam(created_events, vendor=VENDOR, product=table, should_update_health_module=True)
+                    send_events_to_xsiam(created_events, vendor=VENDOR, product=PRODUCT_TABLE_MAPPING.get(table, table), should_update_health_module=True)
                     next_run["sys_created"] = get_last_run(created_events)
                 else:
                     next_run["sys_created"] = last_run_created
@@ -300,7 +303,7 @@ def main() -> None:  # pragma: no cover
 
                 if updated_events:
                     total_events_fetched += len(created_events)
-                    send_events_to_xsiam(updated_events, vendor=VENDOR, product=table, should_update_health_module=True)
+                    send_events_to_xsiam(updated_events, vendor=VENDOR, product=PRODUCT_TABLE_MAPPING.get(table, table), should_update_health_module=True)
                     next_run["sys_updated"] = get_last_run(updated_events)
                 else:
                     next_run["sys_updated"] = last_run_updated

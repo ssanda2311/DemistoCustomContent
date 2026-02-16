@@ -77,6 +77,7 @@ configuration:
   - cmdb_ci_handheld_computing
   - cmdb_ci_netgear
   - sn_vul_vulnerable_item
+  - sn_vul_third_party_entry
   additionalinfo: Select the table name to be fetched
 - section: Collect
   display: Fetch Events
