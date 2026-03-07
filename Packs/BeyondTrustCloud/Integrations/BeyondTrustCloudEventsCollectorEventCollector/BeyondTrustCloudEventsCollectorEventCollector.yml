@@ -1,0 +1,82 @@
+commonfields:
+  id: BeyondTrustCloudEventCollector
+  version: -1
+vcShouldKeepItemLegacyProdMachine: false
+name: BeyondTrustCloudEventCollector
+display: BeyondTrust Cloud Event Collector
+category: Analytics & SIEM
+description: This is the BeyondTrust event collector integration for Cortex XSIAM.
+detaileddescription: |-
+  This is the BeyondTrust Cloud events collector integration for XSIAM.
+
+  This is the default integration for this content pack when configured by the Data Onboarder in Cortex XSIAM.
+
+  ## Configure BeyondTrust Cloud Events Collector on Cortex:
+  1. Navigate to **Settings** > **Configurations** > **Automation & Feed Integrations**.
+  2. Search for BeyondTrust Cloud Event Collector.
+  3. Click **Add instance** to create and configure a new integration instance.
+
+      | **Parameter** | **Required** |
+      | --- | --- |
+      | Client ID         | True |
+      | Client Secret     | True |
+      | Hostname          | True |
+
+  4. Click **Test** to validate the URLs, token, and connection
+configuration:
+- supportedModules: []
+  section: Connect
+  display: Client ID
+  displaypassword: Client Secret
+  name: credentials
+  type: 9
+  required: true
+- supportedModules: []
+  section: Connect
+  display: Hostname
+  name: hostname
+  type: 0
+  required: true
+- supportedModules: []
+  section: Connect
+  display: Verify SSL Certificates
+  name: secure
+  type: 8
+  required: false
+- supportedModules: []
+  section: Connect
+  display: Use system proxy settings
+  name: proxy
+  type: 8
+  required: false
+- supportedModules: []
+  section: Collect
+  display: Fetch Events
+  name: isFetchEvents
+  type: 8
+  required: false
+- supportedModules: []
+  section: Collect
+  advanced: true
+  display: Events Fetch Interval
+  name: eventFetchInterval
+  defaultvalue: "1"
+  type: 19
+  required: false
+- supportedModules: []
+  section: Collect
+  display: Events First Fetch Timestamp
+  name: eventFirstFetch
+  defaultvalue: 1 days
+  type: 0
+  required: false
+  additionalinfo: <number> <time unit>, e.g., 12 hours, 7 days
+script:
+  type: python
+  dockerimage: demisto/python3:3.12.8.3296088
+  subtype: python3
+  isfetchevents: true
+  runonce: false
+sourcemoduleid: BeyondTrustCloudEventCollector
+signature: ""
+restrictioncenter: {}
