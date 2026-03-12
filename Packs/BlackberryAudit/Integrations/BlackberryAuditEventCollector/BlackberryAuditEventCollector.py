@@ -281,7 +281,7 @@ def overlap_exists(events: list[dict], last_event_timestamp) -> bool:
 
 def deduplicate_events(events: list[dict], event_timestamp: str) -> list[dict]:
     """
-    Remove duplicate events from the latest fetched events by comparing the lates events actionDate from
+    Remove duplicate events from the latest fetched events by comparing the latest events actionDate from
     last fetch
     """
     if not event_timestamp:
