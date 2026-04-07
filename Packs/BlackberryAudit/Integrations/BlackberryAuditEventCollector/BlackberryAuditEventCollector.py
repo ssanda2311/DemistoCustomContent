@@ -458,6 +458,14 @@ def fetch_room_groups(
                 except Exception as e:
                     demisto.updateModuleHealth(f"Failed to re-fetch events for the UUID: {uuid}. Fetched events for: {num_uuids_processed} UUIDs. \nError: {str(e)}\n{traceback.format_exc()}")
                     demisto.debug(f"Failed to re-fetch events for the UUID: {uuid}. Fetched events for: {num_uuids_processed} UUIDs. \nError: {str(e)}\n{traceback.format_exc()}")
+                    
+                    # persist progress in context even on failure
+                    last_run = {
+                        "action_dates": last_action_dates,
+                        "unprocessed_uuids": unprocessed_uuids
+                    }
+                    demisto.setLastRun({"rooms": last_run})
+                    
                     continue
 
                 # Check if overlap exists between the refetched events.
@@ -488,6 +496,14 @@ def fetch_room_groups(
                 except Exception as e:
                     demisto.updateModuleHealth(f"Failed to add events to dataset: {vendor}_{product}_raw for the UUID: {uuid}. \nError: {str(e)}\n{traceback.format_exc()}")
                     demisto.debug(f"Failed to add events to dataset: {vendor}_{product}_raw for the UUID: {uuid}. \nError: {str(e)}\n{traceback.format_exc()}")
+                    
+                    # persist progress in context even on failure
+                    last_run = {
+                        "action_dates": last_action_dates,
+                        "unprocessed_uuids": unprocessed_uuids
+                    }
+                    demisto.setLastRun({"rooms": last_run})
+
                     continue
             
 

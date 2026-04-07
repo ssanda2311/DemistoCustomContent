@@ -14,3 +14,8 @@ This is the default integration for this content pack when configured by the Dat
   - Error message now contains UUID, processed count, stack trace
   - Instead of putting all the code inside try-except block, put only the code where the error could occur (eg: fetching events from api, sending events to xsiam dataset)
   - Continue to next UUID in case of error in processing any UUID.
+
+## Version 2.1.0
+### Improvisations
+- Update the integration context data even in case fetch events for a UUID fails.
+- In case the events fetch operation for a UUID fails, along with logging the error update hte context data with the remaining UUIDs to be processed and the latest fetch timestamp for each UUID.
