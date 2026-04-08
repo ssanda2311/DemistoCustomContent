@@ -163,14 +163,18 @@ class Client(BaseClient):
         Get group log for a specific room UUID.
         """
         updated_headers = {**self.headers, "Authorization": self.token_manager.get_auth_token()}
-        response = self._http_request(
-            'POST',
-            f'/rooms/{uuid}/grouplog/create',
-            headers=updated_headers,
-            json_data=payload,
-            resp_type="json",
-            ok_codes=[200]
-        )
+
+        try:
+            response = self._http_request(
+                'POST',
+                f'/rooms/{uuid}/grouplog/create',
+                headers=updated_headers,
+                json_data=payload,
+                resp_type="json",
+                ok_codes=[200]
+            )
+        except Exception as e:
+            raise DemistoException(f"Error: {str(e)}. Payload: {payload}. UUID: {uuid}")
         return response
 
     def get_organisation_grouplog(self, payload):
@@ -433,8 +437,16 @@ def fetch_room_groups(
             uuid_events = client.get_uuid_grouplog(uuid, payload)
             events = uuid_events.get("items", [])
         except Exception as e:
-            demisto.updateModuleHealth(f"Failed to fetch events for the UUID: {uuid}. Processed UUID count: {num_uuids_processed} UUIDs. \nError: {str(e)}\n{traceback.format_exc()}")
+            demisto.updateModuleHealth(f"Failed to fetch events for the UUID: {uuid}. Payload: {payload}. Processed UUID count: {num_uuids_processed} UUIDs. \nError: {str(e)}\n{traceback.format_exc()}")
             demisto.debug(f"Failed to fetch events for the UUID: {uuid}. Processed UUID count: {num_uuids_processed} UUIDs. \nError: {str(e)}\n{traceback.format_exc()}")
+            
+            # persist progress in context even on failure
+            last_run = {
+                "action_dates": last_action_dates,
+                "unprocessed_uuids": unprocessed_uuids
+            }
+            demisto.setLastRun({"rooms": last_run})
+            
             continue
 
         if events:
@@ -456,7 +468,7 @@ def fetch_room_groups(
                     uuid_events = client.get_uuid_grouplog(uuid, payload)
                     events = uuid_events.get("items", [])
                 except Exception as e:
-                    demisto.updateModuleHealth(f"Failed to re-fetch events for the UUID: {uuid}. Fetched events for: {num_uuids_processed} UUIDs. \nError: {str(e)}\n{traceback.format_exc()}")
+                    demisto.updateModuleHealth(f"Failed to re-fetch events for the UUID: {uuid}. Payload: {payload}. Fetched events for: {num_uuids_processed} UUIDs. \nError: {str(e)}\n{traceback.format_exc()}")
                     demisto.debug(f"Failed to re-fetch events for the UUID: {uuid}. Fetched events for: {num_uuids_processed} UUIDs. \nError: {str(e)}\n{traceback.format_exc()}")
                     
                     # persist progress in context even on failure
@@ -637,7 +649,8 @@ def main() -> None:  # pragma: no cover
     params = demisto.params()
     args = demisto.args()
     base_url = params.get('blackberry_url')
-    full_url = urljoin(base_url, '/api/3.0/')
+    # full_url = urljoin(base_url, '/api/3.0/')
+    full_url = base_url.rstrip("/") + "/api/3.0"
 
     # API Credentials
     user_id = params.get('credentials', {}).get('identifier')
