@@ -73,7 +73,7 @@ configuration:
   additionalinfo: <number> <time unit>, e.g., 12 hours, 7 days
 script:
   type: python
-  dockerimage: demisto/python3:3.12.8.3296088
+  dockerimage: demisto/xml-feed:1.0.0.3540467
   subtype: python3
   isfetchevents: true
   runonce: false

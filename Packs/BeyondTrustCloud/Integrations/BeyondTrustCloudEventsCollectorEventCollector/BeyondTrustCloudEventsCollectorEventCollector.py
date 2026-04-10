@@ -6,6 +6,7 @@ import re
 import base64
 import demistomock as demisto
 from CommonServerPython import *
+import xmltodict
 
 
 urllib3.disable_warnings()
@@ -164,7 +165,7 @@ class Client(BaseClient):
         )
 
         if response.status_code == 200:
-            response = response.content
+            response = response.text
             return response
         else:
             return ''
@@ -189,224 +190,6 @@ class Client(BaseClient):
 
         if response.status_code == 200:
             return 'ok'
-
-
-class SessionParser():
-    """
-    This class is responsible for parsing BeyondTrust Support Session XML responses
-    into structured Python dictionaries suitable for XSIAM ingestion.
-
-    Responsibilities:
-    - Extract top-level session metadata.
-    - Parse nested structures (rep_list, customer_list, team_list).
-    - Recursively convert XML session_details into dictionary format.
-    - Normalize certain fields (e.g., split IP:port values).
-    """
-
-    def __init__(self, hostname, namespace):
-        self.ns = namespace
-        self.hostname = hostname
-
-    def get_events(self, session: str):
-        """
-        convert the xml session report into discrete events
-        """
-        return self.__get_events_from_session(session)
-
-    def __get_events_from_session(self, support_session: ET.Element):
-        """
-        Extracts structured session metadata and nested details
-        from a <support_session> XML element.
-        """
-
-        events = {}
-
-        # Basic session metadata
-        events['lsid'] = support_session.get("lsid")
-        events['external_key'] = self.get_text(support_session, './/xmlns:external_key')
-        events['session_type'] = self.get_text(support_session, './/xmlns:session_type')
-        events['lseq'] = self.get_text(support_session, './/xmlns:lseq')
-
-        # Chat URLs
-        events['session_chat_view_url'] = self.get_text(support_session, './/xmlns:session_chat_view_url')
-        events['session_chat_download_url'] = self.get_text(support_session, './/xmlns:session_chat_download_url')
-
-        # Attach device hostname for enrichment
-        events['device_host'] = self.hostname
-
-        # File operation counts
-        events['file_transfer_count'] = self.get_text(support_session, './/xmlns:file_transfer_count')
-        events['file_move_count'] = self.get_text(support_session, './/xmlns:file_move_count')
-        events['file_delete_count'] = self.get_text(support_session, './/xmlns:file_delete_count')
-
-        # Primary user metadata
-        events['primary_customer'] = {
-            'name': self.get_text(support_session, './/xmlns:primary_customer'),
-            'gsnumber': self.get_attr(support_session, './/xmlns:primary_customer', 'gsnumber')
-        }
-        events['primary_rep'] = {
-            'name': self.get_text(support_session, './/xmlns:primary_rep'),
-            'gsnumber': self.get_attr(support_session, './/xmlns:primary_rep', 'gsnumber')
-        }
-
-        # Nested lists
-        events['rep_list'] = self.get_nested_data(support_session.find('xmlns:rep_list', self.ns), self.ns)
-        events['customer_list'] = self.get_nested_data(support_session.find('.//xmlns:customer_list', self.ns), self.ns)
-        events['team_list'] = self.get_nested_data(support_session.find('.//xmlns:team_list', self.ns), self.ns)
-
-
-        # Time fields
-        events['end_time'] = self.get_text(support_session, './/xmlns:end_time')
-        events['start_time'] = self.get_text(support_session, './/xmlns:start_time')
-        events['rep_join_time'] = self.get_text(support_session, './/xmlns:rep_join_time')
-
-        # Detailed session activity
-        events['events'] = self.parse_session_details(support_session.find('xmlns:session_details', self.ns))
-
-        return events
-
-    def get_text(self, root, path):
-        """
-        Extract text from XML element.
-        """
-        elem = root.find(path, self.ns)
-        return elem.text.strip() if elem is not None and elem.text else None
-
-
-    def get_attr(self, root, path, attr):
-        """
-        Extract attribute from XML element.
-        """
-        elem = root.find(path, self.ns)
-        return elem.get(attr) if elem is not None else None
-
-    def element_to_dict(self, element: ET.Element):
-        """
-        Recursively convert XML element (and children) into dictionary.
-        """
-
-        # If no children element, then return text
-        if not list(element):
-            return (element.text or "").strip()
-
-        result = {}
-
-        for child in element:
-            tag = child.tag.split('}', 1)[-1]
-            value = self.element_to_dict(child)
-
-            if tag in result:
-                if not isinstance(result[tag], list):
-                    result[tag] = [result[tag]]
-                result[tag].append(value)
-            else:
-                result[tag] = value
-
-        return result
-
-    def get_nested_data(self, element: ET.Element, xmlns):
-        """
-        Convert list-based nested XML elements (rep_list, customer_list, etc.)
-        into structured Python dictionaries.
-        """
-
-        data = []
-
-        if element is None:
-            return []
-
-        for ele in element:
-            data_item = {}
-
-            # Include element attributes
-            data_item.update(ele.attrib)
-
-            for child in ele:
-                tag = child.tag.split('}', 1)[-1]
-
-                # Recursive handling for nested structures
-                if list(child):
-                    data_item[tag] = self.element_to_dict(child)
-                    continue
-
-                value = (child.text or "").strip()
-                if not value:
-                    continue
-
-                # Split IP and port if format is "ip:port"
-                if tag in ("public_ip", "private_ip") and ":" in value:
-                    ip, port = value.split(":", 1)
-                    data_item[tag] = ip
-                    data_item[f"{tag}_port"] = port
-                else:
-                    data_item[tag] = value
-
-            data.append(data_item)
-
-        return data
-
-    def parse_session_details(self, session_element: ET.Element):
-        """
-        Parse <session_details> block and return list of structured events.
-        """
-
-        events = []
-        if session_element is None:
-            return []
-
-        for event in session_element.findall("xmlns:event", self.ns):
-            events.append(self.parse_element(event))
-
-        return events
-
-    def parse_element(self, element: ET.Element):
-        """
-        Recursive XML-to-dict converter for session detail events.
-        """
-
-        node = {}
-
-        # Add attributes
-        if element.attrib:
-            node.update(element.attrib)
-
-        children = list(element)
-
-        # No children
-        if not children:
-            text = (element.text or "").strip()
-            if node and text:
-                node["text"] = text
-                return node
-            return text if text else node
-
-        for child in children:
-            tag = child.tag.split('}', 1)[-1]
-
-            # handling for key-value style nodes and convert to dict
-            if tag == "value" and "name" in child.attrib:
-                key = child.attrib.get("name")
-                val = child.attrib.get("value")
-                node[key] = val
-                continue
-
-            child_value = self.parse_element(child)
-
-            if tag in node:
-                if not isinstance(node[tag], list):
-                    node[tag] = [node[tag]]
-                node[tag].append(child_value)
-            else:
-                node[tag] = child_value
-
-        return node
-
-
-def get_xml_namespace(session_tree: ET.Element):
-    # Parse the namespace from the XML data,
-    # which is used for search all the data elements in the XML
-    m = re.match(r'\{(.*)\}', session_tree.tag)
-    return { 'xmlns': m.group(1) }
 
 
 def current_utc_seconds() -> int:
@@ -444,11 +227,12 @@ def get_max_timestamp_and_lseq(data):
     lseq = []
 
     for item in data:
+        event_end_time = item.get("end_time", {}).get("#text")
         # Skip events without end_time
-        if "end_time" not in item:
+        if not event_end_time:
             continue
 
-        current_ts = iso_to_seconds(item["end_time"])
+        current_ts = iso_to_seconds(event_end_time)
         current_lseq = item.get("lseq")
 
         # First valid timestamp encountered
@@ -482,7 +266,8 @@ def deduplicate_events(data: list[dict], prev_lseq: list[str], prev_ts: int) -> 
     updated_data = []
 
     for item in data:
-        event_end_time = item.get('end_time')
+        # extract the end timestamp from the session event data
+        event_end_time = item.get("end_time", {}).get("#text")
 
         # If event has no timestamp, include it by default
         if not event_end_time:
@@ -566,6 +351,24 @@ def get_next_run(data: list[dict]) -> dict:
     return next_run
 
 
+def convert_xml_to_dict(xml_text: str) -> list:
+    """
+    Convert XML data to python json format.
+    Ensure that the session object is always of type list.
+    """
+    # If the xml text is blank then return empty list
+    if not xml_text:
+        return []
+    
+    try:
+        data = xmltodict.parse(xml_text, force_list=("session",))
+        return data.get("session_list", {}).get("session", [])
+    except Exception as e:
+        demisto.debug(f"XML parsing failed: {str(e)}")
+        demisto.updateModuleHealth(f"XML parsing failed: {str(e)}")
+        return []
+
+
 def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict, vendor: str, product: str) -> list:
     """
     Fetch events incrementally from the BeyondTrust Reporting API.
@@ -631,16 +434,8 @@ def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict
     response = client.get_events(events_params)
 
     # Parse XML response
-    session_tree = ET.fromstring(response)
-    xmlns = get_xml_namespace(session_tree)
-
-    # Initialize session parser to convert XML to JSON
-    sessionparser = SessionParser(hostname, xmlns)
-
-    session_events = []
-    for session in session_tree:
-        session_event = sessionparser.get_events(session)
-        session_events.append(session_event)
+    session_events = convert_xml_to_dict(response)
+    
 
     # Check if session events are present
     if session_events:
@@ -659,15 +454,9 @@ def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict
             # Refetch events using reduced timestamp
             response = client.get_events(events_params)
 
-            session_tree = ET.fromstring(response)
-            xmlns = get_xml_namespace(session_tree)
-
-            sessionparser = SessionParser(hostname, xmlns)
-
-            session_events = []
-            for session in session_tree:
-                session_event = sessionparser.get_events(session)
-                session_events.append(session_event)
+            # Parse XML response
+            session_events = convert_xml_to_dict(response)
+            
 
             # If overlap still not detected, log possible API data loss
             if not overlap_exists(session_events, last_lseq_id):
