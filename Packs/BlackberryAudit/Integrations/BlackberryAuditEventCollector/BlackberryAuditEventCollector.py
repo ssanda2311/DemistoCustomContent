@@ -640,7 +640,8 @@ def fetch_organisation_groups(
         
         # increment the number of loop iterations
         loop_iterations += 1
-
+    demisto.updateModuleHealth("")
+    
 
 def main() -> None:  # pragma: no cover
     """

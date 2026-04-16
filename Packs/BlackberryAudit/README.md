@@ -19,3 +19,7 @@ This is the default integration for this content pack when configured by the Dat
 ### Improvisations
 - Update the integration context data even in case fetch events for a UUID fails.
 - In case the events fetch operation for a UUID fails, along with logging the error update hte context data with the remaining UUIDs to be processed and the latest fetch timestamp for each UUID.
+
+## Version 2.2.0
+### Improvisations
+- Update the integration context data even in case fetch events for a UUID fails. (added the same logic introduced in Version 2.1.0 to an additional try-except block)
