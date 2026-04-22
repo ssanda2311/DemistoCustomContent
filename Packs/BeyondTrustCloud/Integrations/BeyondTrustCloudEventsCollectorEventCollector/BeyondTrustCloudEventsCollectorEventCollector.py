@@ -358,15 +358,21 @@ def convert_xml_to_dict(xml_text: str) -> list:
     """
     # If the xml text is blank then return empty list
     if not xml_text:
-        return []
+        return {"success": True, "data": []}
     
     try:
         data = xmltodict.parse(xml_text, force_list=("session",))
-        return data.get("session_list", {}).get("session", [])
+        sessions = data.get("session_list", {}).get("session", [])
+        return {"success": True, "data": sessions}
     except Exception as e:
         demisto.debug(f"XML parsing failed: {str(e)}")
         demisto.updateModuleHealth(f"XML parsing failed: {str(e)}")
-        return []
+        return {
+            "success": False,
+            "_raw_log": xml_text,
+            "error": "Error: Failed to convert xml to json"
+        }
+        # return {"_raw_log": xml_text, "description": "Error: Failed to convert xml to json"}
 
 
 def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict, vendor: str, product: str) -> list:
@@ -434,8 +440,43 @@ def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict
     response = client.get_events(events_params)
 
     # Parse XML response
-    session_events = convert_xml_to_dict(response)
-    
+    result = convert_xml_to_dict(response)
+    session_events = result.get("data", [])
+
+    # Check if the error occured during conversion of xml to json
+    # If yes, then extract the lseq and end_time from the xml using regex
+    # to update the context data
+    if not result.get("success"):
+        raw_xml = result.get("_raw_log")
+        # extract the lseq and end_time from the xml
+        match = re.search(
+            r"<lseq>(\d+)</lseq>.*?<end_time[^>]*>(.*?)</end_time>",
+            raw_xml,
+            re.DOTALL
+        )
+
+        # set default next_run to last_run
+        next_run = last_run
+
+        if match:
+            lseq =  match.group(1)
+            end_time_text = match.group(2)
+
+            # if same lseq id data is refetched then 
+            # avoid appending same raw_log to dataset.
+            if lseq == last_run.get('lseq_id'):
+                return
+            
+            # update next run data with the current lseq and end time timestamp
+            next_run = {
+                'end_time': iso_to_seconds(end_time_text),
+                'lseq_id': lseq
+            }
+        
+        send_events_to_xsiam([result], vendor=vendor, product=product, should_update_health_module=True)
+        demisto.setLastRun(next_run)
+        return
+           
 
     # Check if session events are present
     if session_events:

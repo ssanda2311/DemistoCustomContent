@@ -2,7 +2,7 @@
     "name": "BeyondTrust Cloud",
     "description": "BeyondTrust Cloud events collector",
     "support": "xsiam",
-    "currentVersion": "2.0.0",
+    "currentVersion": "2.1.0",
     "author": "ssharma7@paloaltonetworks.cpom",
     "url": "https://www.paloaltonetworks.com/cortex",
     "email": "",
