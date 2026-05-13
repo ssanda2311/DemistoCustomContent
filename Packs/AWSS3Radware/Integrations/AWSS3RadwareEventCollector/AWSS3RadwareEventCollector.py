@@ -33,7 +33,7 @@ class Client():
         self.queue_url = queue_url
 
 
-    def receive_sqs_messages(self, max_messages: int = 5, wait_time: int = 20, visibility_timeout: int = 300) -> list:
+    def receive_sqs_messages(self, max_messages: int = 5, wait_time: int = 20, visibility_timeout: int = 3600) -> list:
         response = self.sqs.receive_message(
             QueueUrl=self.queue_url,
             MaxNumberOfMessages=max_messages,
@@ -114,7 +114,7 @@ def read_gz_json_array(file_path: str) -> list[dict]:
     return data
 
 
-def fetch_events(client: Client, fetch_limit: int, last_run: dict[str, str], vendor: str, product: str, max_messages: int = 5):
+def fetch_events(client: Client, fetch_limit: int, last_run: dict[str, str], vendor: str, product: str, max_messages: int = 10):
     if not last_run:
         messages = client.receive_sqs_messages(max_messages=max_messages)
 
