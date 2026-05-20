@@ -10,7 +10,6 @@ import gzip
 import copy
 import demistomock as demisto
 
-
 class Client():
     def __init__(self, queue_url, aws_access_key_id, aws_secret_access_key, region_name, verify=False):
         self.sqs = boto3.client(
