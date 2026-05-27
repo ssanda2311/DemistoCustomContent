@@ -375,6 +375,50 @@ def convert_xml_to_dict(xml_text: str) -> list:
         # return {"_raw_log": xml_text, "description": "Error: Failed to convert xml to json"}
 
 
+def handle_failed_xml_conversion(result: dict, last_run: dict, vendor: str, product: str) -> bool:
+    """
+    Handle XML - Dict conversion failure.
+    Parses the raw log and the lseq id from the results using regex to update the context.
+    """
+    # Check if the error occured during conversion of xml to json
+    # If yes, then extract the lseq and end_time from the xml using regex
+    # to update the context data
+    # Else return False and parse the data.
+    if result.get("success"):
+        return False
+    
+    raw_xml = result.get("_raw_log", "")
+    
+    # extract the lseq and end_time from the xml
+    match = re.search(
+        r"<lseq>(\d+)</lseq>.*?<end_time[^>]*>(.*?)</end_time>",
+        raw_xml,
+        re.DOTALL
+    )
+
+    # set default next_run to last_run
+    next_run = last_run
+
+    if match:
+        lseq =  match.group(1)
+        end_time_text = match.group(2)
+
+        # if same lseq id data is refetched then 
+        # avoid appending same raw_log to dataset.
+        if str(lseq) == str(last_run.get('lseq_id')):
+            return True
+        
+        # update next run data with the current lseq and end time timestamp
+        next_run = {
+            'end_time': iso_to_seconds(end_time_text),
+            'lseq_id': lseq
+        }
+    
+    send_events_to_xsiam([result], vendor=vendor, product=product, should_update_health_module=True)
+    demisto.setLastRun(next_run)
+    return True
+
+
 def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict, vendor: str, product: str) -> list:
     """
     Fetch events incrementally from the BeyondTrust Reporting API.
@@ -441,42 +485,12 @@ def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict
 
     # Parse XML response
     result = convert_xml_to_dict(response)
-    session_events = result.get("data", [])
-
-    # Check if the error occured during conversion of xml to json
-    # If yes, then extract the lseq and end_time from the xml using regex
-    # to update the context data
-    if not result.get("success"):
-        raw_xml = result.get("_raw_log")
-        # extract the lseq and end_time from the xml
-        match = re.search(
-            r"<lseq>(\d+)</lseq>.*?<end_time[^>]*>(.*?)</end_time>",
-            raw_xml,
-            re.DOTALL
-        )
-
-        # set default next_run to last_run
-        next_run = last_run
-
-        if match:
-            lseq =  match.group(1)
-            end_time_text = match.group(2)
-
-            # if same lseq id data is refetched then 
-            # avoid appending same raw_log to dataset.
-            if lseq == last_run.get('lseq_id'):
-                return
-            
-            # update next run data with the current lseq and end time timestamp
-            next_run = {
-                'end_time': iso_to_seconds(end_time_text),
-                'lseq_id': lseq
-            }
-        
-        send_events_to_xsiam([result], vendor=vendor, product=product, should_update_health_module=True)
-        demisto.setLastRun(next_run)
+    
+    # Handle conversion failure
+    if handle_failed_xml_conversion(result, last_run, vendor, product):
         return
-           
+
+    session_events = result.get("data", [])
 
     # Check if session events are present
     if session_events:
@@ -496,8 +510,13 @@ def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict
             response = client.get_events(events_params)
 
             # Parse XML response
-            session_events = convert_xml_to_dict(response)
+            result = convert_xml_to_dict(response)
             
+            # Handle conversion failure
+            if handle_failed_xml_conversion(result, last_run, vendor, product):
+                return
+
+            session_events = result.get("data", [])
 
             # If overlap still not detected, log possible API data loss
             if not overlap_exists(session_events, last_lseq_id):

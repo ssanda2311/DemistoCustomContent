@@ -14,3 +14,8 @@ This is the default integration for this content pack when configured by the Dat
 - Implemented regex-based extraction as a secondary fallback in case of conversion failure:
   - Extracts `lseq` and `end_time` timestamp directly from the XML when parsing fails.
   - Update the integration context to prevent duplicate logging of the same failed payload in the dataset.
+
+## Version 2.2.0
+### Updates
+- Added `handle_failed_xml_conversion()` helper function to centrally handle XML-to-dictionary conversion failures by extracting `lseq` and `end_time` from raw XML, updating `last_run`, and sending raw events to XSIAM.
+- Reused `handle_failed_xml_conversion()` during both initial fetch and retry/refetch flows to avoid duplicate logic and ensure consistent handling of malformed XML responses.
