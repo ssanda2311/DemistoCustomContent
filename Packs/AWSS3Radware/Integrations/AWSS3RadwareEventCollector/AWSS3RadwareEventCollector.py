@@ -34,7 +34,7 @@ class Client():
         self.queue_url = queue_url
 
 
-    def receive_sqs_messages(self, max_messages: int = 5, wait_time: int = 20, visibility_timeout: int = 3600) -> list:
+    def receive_sqs_messages(self, max_messages: int = 5, wait_time: int = 20, visibility_timeout: int = 21600) -> list:
         response = self.sqs.receive_message(
             QueueUrl=self.queue_url,
             MaxNumberOfMessages=max_messages,
