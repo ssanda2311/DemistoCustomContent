@@ -152,8 +152,12 @@ def fetch_events(client: Client, fetch_limit: int, last_run: dict[str, str], ven
             if os.path.exists(file_name):
                 os.remove(file_name)
 
-        # delete sql message
-        client.delete_sqs_message(receipt_handle)
+        try:
+            # delete sqs message
+            client.delete_sqs_message(receipt_handle)
+        except Exception as e:
+            demisto.updateModuleHealth(f"Failed to delete the sqs message for receipt handle: {receipt_handle} Error: {str(e)}")
+            continue
 
 
 def main() -> None:
