@@ -1,0 +1,17 @@
+This is the Blackberry Audit Organisation Groups event collector integration for XSIAM.
+
+This is the default integration for this content pack when configured by the Data Onboarder in Cortex XSIAM.
+
+## Configure Blackberry Audit Organisation Groups Event Collector on Cortex:
+1. Navigate to **Settings** > **Configurations** > **Automation & Feed Integrations**.
+2. Search for Blackberry Audit Organisation Groups Event Collector.
+3. Click **Add instance** to create and configure a new integration instance.
+
+    | **Parameter** | **Required** |
+    | --- | --- |
+    | Server URL                  | True |
+    | User ID                     | True |
+    | Private KEY                 | True |
+    | Provider Name               | True |
+
+4. Click **Test** to validate the URLs, token, and connection

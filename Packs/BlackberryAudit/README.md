@@ -23,3 +23,6 @@ This is the default integration for this content pack when configured by the Dat
 ## Version 2.2.0
 ### Improvisations
 - Update the integration context data even in case fetch events for a UUID fails. (added the same logic introduced in Version 2.1.0 to an additional try-except block)
+
+## Version 3.0.0
+- Addition of separate integrations for Room Groups (**Blackberry Audit Room Groups Event Collector**) and Organisation Groups (**Blackberry Audit Organisation Groups Event Collector**)
