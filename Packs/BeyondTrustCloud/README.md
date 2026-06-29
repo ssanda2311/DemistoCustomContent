@@ -19,3 +19,16 @@ This is the default integration for this content pack when configured by the Dat
 ### Updates
 - Added `handle_failed_xml_conversion()` helper function to centrally handle XML-to-dictionary conversion failures by extracting `lseq` and `end_time` from raw XML, updating `last_run`, and sending raw events to XSIAM.
 - Reused `handle_failed_xml_conversion()` during both initial fetch and retry/refetch flows to avoid duplicate logic and ensure consistent handling of malformed XML responses.
+
+## Version 2.3.0
+### Updates
+- Removed `handle_failed_xml_conversion()` helper function and used the `convert_xml_to_dict` to push raw_xml into dataset in case of failure.
+- Update the code structure to remove nested conditional statements.
+
+
+## Version 2.3.1
+### Updates
+- Added logic to filter out None or empty values inside the following two fuciton when collecting the lseq_id
+  - get_max_timestamp_and_lseq
+  - overlap_exists
+- Updated the end_time with the refetch_time in case events are refetched i.e. (should_refetch_events = True)

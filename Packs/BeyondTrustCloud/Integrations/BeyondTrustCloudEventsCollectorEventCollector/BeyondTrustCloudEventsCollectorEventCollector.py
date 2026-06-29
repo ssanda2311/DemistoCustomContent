@@ -250,6 +250,9 @@ def get_max_timestamp_and_lseq(data):
         elif current_ts == max_timestamp:
             lseq.append(current_lseq)
 
+    # Filter None values from the lseq
+    lseq = [lseq_id for lseq_id in lseq if lseq_id]
+
     return max_timestamp, lseq
 
 
@@ -323,7 +326,8 @@ def overlap_exists(data: list[dict], prev_lseq: list[str]) -> bool:
     """
 
     # Extract lseq values from newly fetched events
-    current_lseq_ids = [data_item.get('lseq') for data_item in data]
+    # excluding the null or empty values
+    current_lseq_ids = [data_item.get('lseq') for data_item in data if data_item.get('lseq')]
 
     # Return True if any previously stored lseq exists in current results
     return any(lseq_id in prev_lseq for lseq_id in current_lseq_ids)
@@ -351,75 +355,44 @@ def get_next_run(data: list[dict]) -> dict:
     return next_run
 
 
-def convert_xml_to_dict(xml_text: str) -> list:
+def convert_xml_to_dict(xml_text: str, vendor, product) -> list:
     """
-    Convert XML data to python json format.
+    Convert XML data to python dict format.
     Ensure that the session object is always of type list.
+
+    This function returns the session_events if conversion from xml to json successful.
+    If conversion is not successful then pushes the raw xml data to the dataset,
+    and also logs an error for the conversion failure.
     """
     # If the xml text is blank then return empty list
     if not xml_text:
-        return {"success": True, "data": []}
+        return []
     
+    # If xml text if present, then convert xml to json
+    # If conversion is success: then return session_events
+    # Else push raw xml to xsiam dataset under _raw_log field
     try:
         data = xmltodict.parse(xml_text, force_list=("session",))
         sessions = data.get("session_list", {}).get("session", [])
-        return {"success": True, "data": sessions}
+        return sessions
     except Exception as e:
-        demisto.debug(f"XML parsing failed: {str(e)}")
-        demisto.updateModuleHealth(f"XML parsing failed: {str(e)}")
-        return {
-            "success": False,
+        # Format the data to be pyushed into dataset
+        data =  {
             "_raw_log": xml_text,
             "error": "Error: Failed to convert xml to json"
         }
-        # return {"_raw_log": xml_text, "description": "Error: Failed to convert xml to json"}
+
+        # Push the raw xml data into dataset
+        send_events_to_xsiam([data], vendor=vendor, product=product, should_update_health_module=True)
+
+        demisto.debug(f"XML parsing failed: {str(e)}")
+        demisto.updateModuleHealth(f"XML parsing failed: {str(e)}")
+
+        # Return empty list
+        return []
 
 
-def handle_failed_xml_conversion(result: dict, last_run: dict, vendor: str, product: str) -> bool:
-    """
-    Handle XML - Dict conversion failure.
-    Parses the raw log and the lseq id from the results using regex to update the context.
-    """
-    # Check if the error occured during conversion of xml to json
-    # If yes, then extract the lseq and end_time from the xml using regex
-    # to update the context data
-    # Else return False and parse the data.
-    if result.get("success"):
-        return False
-    
-    raw_xml = result.get("_raw_log", "")
-    
-    # extract the lseq and end_time from the xml
-    match = re.search(
-        r"<lseq>(\d+)</lseq>.*?<end_time[^>]*>(.*?)</end_time>",
-        raw_xml,
-        re.DOTALL
-    )
-
-    # set default next_run to last_run
-    next_run = last_run
-
-    if match:
-        lseq =  match.group(1)
-        end_time_text = match.group(2)
-
-        # if same lseq id data is refetched then 
-        # avoid appending same raw_log to dataset.
-        if str(lseq) == str(last_run.get('lseq_id')):
-            return True
-        
-        # update next run data with the current lseq and end time timestamp
-        next_run = {
-            'end_time': iso_to_seconds(end_time_text),
-            'lseq_id': lseq
-        }
-    
-    send_events_to_xsiam([result], vendor=vendor, product=product, should_update_health_module=True)
-    demisto.setLastRun(next_run)
-    return True
-
-
-def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict, vendor: str, product: str) -> list:
+def fetch_events(client: Client, first_fetch: int, last_run: dict, vendor: str, product: str) -> list:
     """
     Fetch events incrementally from the BeyondTrust Reporting API.
 
@@ -484,56 +457,45 @@ def fetch_events(client: Client, hostname: str, first_fetch: int, last_run: dict
     response = client.get_events(events_params)
 
     # Parse XML response
-    result = convert_xml_to_dict(response)
-    
-    # Handle conversion failure
-    if handle_failed_xml_conversion(result, last_run, vendor, product):
-        return
+    session_events = convert_xml_to_dict(response, vendor, product)
 
-    session_events = result.get("data", [])
+    # Check if the events needs to refetched using the reduced timestamp
+    # Refetch is NOT required if:
+    # 1. No new data was returned
+    # 2. No previous lseq values exist (initial integration run)
+    # 3. An overlap exists between previous and current lseq values
+    if should_refetch_events(session_events, last_lseq_id):
+        refetch_time = end_time - refetch_grace_period_seconds
+        events_params["end_time"] = refetch_time
 
-    # Check if session events are present
-    if session_events:
-        # Check if the events needs to refetched using the reduced timestamp
-        # Refetch is NOT required if:
-        # 1. No new data was returned
-        # 2. No previous lseq values exist (initial integration run)
-        # 3. An overlap exists between previous and current lseq values
-        if should_refetch_events(session_events, last_lseq_id):
-            refetch_time = end_time - refetch_grace_period_seconds
-            events_params["end_time"] = refetch_time
+        # Update end_time for dedup logic
+        end_time = refetch_time
 
-            demisto.updateModuleHealth(f"No overlapping events found. Refetching with grace time(sec): {refetch_time}")
-            demisto.debug(f"No overlapping events found. Refetching with grace time(sec): {refetch_time}")
+        demisto.updateModuleHealth(f"No overlapping events found. Refetching with grace time(sec): {refetch_time}")
+        demisto.debug(f"No overlapping events found. Refetching with grace time(sec): {refetch_time}")
 
-            # Refetch events using reduced timestamp
-            response = client.get_events(events_params)
+        # Refetch events using reduced timestamp
+        response = client.get_events(events_params)
 
-            # Parse XML response
-            result = convert_xml_to_dict(response)
-            
-            # Handle conversion failure
-            if handle_failed_xml_conversion(result, last_run, vendor, product):
-                return
+        # Parse XML response
+        session_events = convert_xml_to_dict(response, vendor, product)
 
-            session_events = result.get("data", [])
+        # If overlap still not detected, log possible API data loss
+        if not overlap_exists(session_events, last_lseq_id):
+            demisto.updateModuleHealth(f"Still no overlapping events found after refetch with time={refetch_time}. Possible API data loss.")
+            demisto.debug(f"Still no overlapping events found after refetch with time={refetch_time}. Possible API data loss.")
 
-            # If overlap still not detected, log possible API data loss
-            if not overlap_exists(session_events, last_lseq_id):
-                demisto.updateModuleHealth(f"Still no overlapping events found after refetch with time={refetch_time}. Possible API data loss.")
-                demisto.debug(f"Still no overlapping events found after refetch with time={refetch_time}. Possible API data loss.")
+    # Remove duplicate events based on stored 'end_time' timestamp and lseq
+    filtered_events = deduplicate_events(session_events, last_lseq_id, end_time)
 
-        # Remove duplicate events based on stored 'end_time' timestamp and lseq
-        filtered_events = deduplicate_events(session_events, last_lseq_id, end_time)
-
-        # If events are present after removing the duplicate events
-        # then send the evetns to xsiam
-        # and update the integration context
-        if filtered_events:
-            # Create next_run object from latest events
-            next_run = get_next_run(filtered_events)
-            send_events_to_xsiam(filtered_events, vendor=vendor, product=product, should_update_health_module=True)
-            demisto.setLastRun(next_run)
+    # If events are present after removing the duplicate events
+    # then send the events to xsiam
+    # and update the integration context
+    if filtered_events:
+        # Create next_run object from latest events
+        next_run = get_next_run(filtered_events)
+        send_events_to_xsiam(filtered_events, vendor=vendor, product=product, should_update_health_module=True)
+        demisto.setLastRun(next_run)
 
 
 def main() -> None:  # pragma: no cover
@@ -593,7 +555,7 @@ def main() -> None:  # pragma: no cover
             for fetching data and pushing to XSIAM dataset
             '''
             last_run = demisto.getLastRun()
-            fetch_events(client, hostname, first_fetch, last_run, vendor, product)
+            fetch_events(client, first_fetch, last_run, vendor, product)
 
     except Exception as e:
         err_msg = f"Error in {get_integration_name()} Integration [{e}]"
