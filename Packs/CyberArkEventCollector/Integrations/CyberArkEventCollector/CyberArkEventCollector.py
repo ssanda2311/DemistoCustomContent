@@ -4,6 +4,7 @@ import urllib3
 import requests
 import dateparser
 from typing import Any, Optional, Union
+import json
 
 urllib3.disable_warnings()
 
@@ -104,6 +105,7 @@ class Client(BaseClient):
             **self.headers,
             "Authorization": self.get_auth_token()
         }
+        demisto.debug(f"Cyberark stream create query api - Payload: json.dumps(payload)")
 
         response = self._http_request(
             'POST',
@@ -113,6 +115,7 @@ class Client(BaseClient):
             resp_type="json",
             ok_codes=[200]
         )
+        demisto.debug(f"Cyberark stream create query api - Payload: {json.dumps(payload)}.")
         return response.get("cursorRef")
 
     def cyberark_stream_query_results(self, cursor_ref):
@@ -121,6 +124,7 @@ class Client(BaseClient):
             "Authorization": self.get_auth_token()
         }
 
+        demisto.debug(f"Cyberark stream create query api - Cursor Ref: {cursor_ref}.")
         response = self._http_request(
             'POST',
             '/api/audits/stream/results',
@@ -282,12 +286,15 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
     last_cursor_ref = last_run.get('cursor_ref')
     perform_dedup = True
 
+    demisto.debug(f"Cyberark - {application_code} - Start fetching events.")
+
     if not last_fetch:
         first_fetch_dt = dateparser.parse(first_fetch, settings={'RELATIVE_BASE': datetime.now(timezone.utc)})
 
         if first_fetch_dt.tzinfo is None:
             first_fetch_dt = first_fetch_dt.replace(tzinfo=timezone.utc)
         first_fetch = convert_timestamp_dt_to_str(first_fetch_dt)
+        demisto.debug(f"Cyberark - {application_code} - Last fetch timestamp not present. Firs fetch timestamp: {first_fetch}")
 
     '''
     Check if there is next page in the previous fetch
@@ -300,6 +307,7 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
         else:
             last_fetch = reduce_ms(last_fetch, factor=1)
             is_initial_fetch = False
+        demisto.debug(f"Cyberark - {application_code} - last_cursor_ref is not present. Is initial fetch: {is_initial_fetch}. Last fetch: {last_fetch}")
 
         # create payload for the create query api request
         to_date = current_utc()
@@ -319,6 +327,7 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
                 cursor_ref = client.cyberark_stream_create_query(payload)
                 events = client.cyberark_stream_query_results(cursor_ref)
                 events_data = events.get("data", [])
+                demisto.debug(f"Cyberark - {application_code} - Is initial fetch: {is_initial_fetch}. Lookback count: {lookback_count}. Last cursor ref: {last_cursor_ref}. Fetch events api payload: {json.dumps(payload)}. Number of events returned: {len(events_data)}")
                 events_data = sort_events(events_data)
 
                 # check if overlapping events found
@@ -355,6 +364,7 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
             cursor_ref = client.cyberark_stream_create_query(payload)
             events = client.cyberark_stream_query_results(cursor_ref)
             events_data = events.get("data", [])
+            demisto.debug(f"Cyberark - {application_code} - Is initial fetch: {is_initial_fetch}. Last cursor ref: {last_cursor_ref}. Fetch events api payload: {json.dumps(payload)}. Number of events returned: {len(events_data)}")
             events_data = sort_events(events_data)
             perform_dedup = False
 
@@ -362,6 +372,7 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
         # Continuation using existing cursor
         events = client.cyberark_stream_query_results(last_cursor_ref)
         events_data = events.get("data", [])
+        demisto.debug(f"Cyberark - {application_code} - Fetch continuation events. Is initial fetch: {is_initial_fetch}. Last cursor ref: {last_cursor_ref}. Fetch events api payload: {json.dumps(payload)}. Number of events returned: {len(events_data)}")
         events_data = sort_events(events_data)
         perform_dedup = False
 
@@ -448,6 +459,7 @@ def main() -> None:
             events, next_cursor = fetch_events(client, fetch_limit, first_fetch, last_run, application_code)
 
             if events:
+                demisto.debug(f"Cyberark - {application_code} - Pushing {len(events)} events to dataset.")
                 send_events_to_xsiam(events, vendor=vendor, product=f"{product}_{application_code}")
                 next_run = get_last_run(events)
 
@@ -459,6 +471,7 @@ def main() -> None:
             next_run["cursor_ref"] = next_cursor
 
             demisto.updateModuleHealth({"eventsPulled": (len(events) or 0)})
+            demisto.debug(f"Curent status of integration context: {json.dumps(next_run)}")
             demisto.setLastRun(next_run)
 
     except Exception as e:
