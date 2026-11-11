@@ -105,7 +105,7 @@ class Client(BaseClient):
             **self.headers,
             "Authorization": self.get_auth_token()
         }
-        demisto.debug(f"Cyberark stream create query api - Payload: json.dumps(payload)")
+        # demisto.debug(f"Cyberark stream create query api - Payload: {json.dumps(payload)}")
 
         response = self._http_request(
             'POST',
@@ -304,10 +304,11 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
         if not last_fetch:
             last_fetch = first_fetch
             is_initial_fetch = True
+            demisto.debug(f"Cyberark - {application_code} - last_cursor_ref is not present. Is initial fetch: {is_initial_fetch}. Last fetch: {last_fetch}")
         else:
             last_fetch = reduce_ms(last_fetch, factor=1)
             is_initial_fetch = False
-        demisto.debug(f"Cyberark - {application_code} - last_cursor_ref is not present. Is initial fetch: {is_initial_fetch}. Last fetch: {last_fetch}")
+            demisto.debug(f"Cyberark - {application_code} - last_cursor_ref is not present. Is initial fetch: {is_initial_fetch}. Last fetch: {last_fetch}")
 
         # create payload for the create query api request
         to_date = current_utc()
@@ -372,16 +373,35 @@ def fetch_events(client: Client, fetch_limit: int, first_fetch: str, last_run: d
         # Continuation using existing cursor
         events = client.cyberark_stream_query_results(last_cursor_ref)
         events_data = events.get("data", [])
-        demisto.debug(f"Cyberark - {application_code} - Fetch continuation events. Is initial fetch: {is_initial_fetch}. Last cursor ref: {last_cursor_ref}. Fetch events api payload: {json.dumps(payload)}. Number of events returned: {len(events_data)}")
+        demisto.debug(f"Cyberark - {application_code} - Fetch continuation events. Last cursor ref: {last_cursor_ref}. Number of events returned: {len(events_data)}")
         events_data = sort_events(events_data)
         perform_dedup = False
+
+    # Get the count of original events
+    raw_count = len(events_data) if events_data else 0
+
+    # Set next cursor
+    next_cursor = events.get("paging", {}).get("cursor", {}).get("cursorRef")
 
     if perform_dedup and events_data:
         events_data = deduplicate_events(events_data, last_event_ids, last_run.get('timestamp', last_fetch))
 
-
-    # Set next cursor
-    next_cursor = events.get("paging", {}).get("cursor", {}).get("cursorRef") if events_data else None
+    demisto.debug(
+        f"[FETCH_DIAG] "
+        f"application={application_code}, "
+        f"last_timestamp={last_run.get('timestamp')}, "
+        f"existing_cursor={bool(last_cursor_ref)}, "
+        f"raw_events={raw_count}, "
+        f"retained_events={len(events_data)}, "
+        f"next_cursor={bool(next_cursor)}, "
+        f"dedup_enabled={perform_dedup}"
+        )
+    
+    if raw_count > 0 and not events_data:
+        demisto.debug(
+        "[FETCH_DIAG] All events filtered out. "
+        "Investigate deduplication and checkpoint."
+        )
 
     return events_data, next_cursor
 
